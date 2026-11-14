@@ -1,0 +1,9 @@
+services:
+  nihongo:
+    build: .
+    image: nihongo-smknuda:latest
+    container_name: nihongo-smknuda
+    restart: unless-stopped
+    # Dibuka di port 8432 sesuai route Cloudflare japan.smknuda.qzz.io, LAN sekolah, dan Tailscale
+    ports:
+      - "8432:80"
