@@ -59,20 +59,20 @@ main { flex: 1; }
 
 .topbar {
   position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: .65rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+  padding: .6rem 1rem;
   background: rgba(251, 247, 242, .85);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line);
 }
-.brand { display: flex; align-items: center; gap: .6rem; text-decoration: none; color: var(--ink); font-size: 1.05rem; line-height: 1.15; }
-.brand-img { width: 2.35rem; height: 2.35rem; object-fit: contain; border-radius: 8px; flex-shrink: 0; }
+.brand { display: flex; align-items: center; gap: .55rem; text-decoration: none; color: var(--ink); font-size: 1rem; line-height: 1.15; flex-shrink: 0; }
+.brand-img { width: 2.2rem; height: 2.2rem; object-fit: contain; border-radius: 8px; flex-shrink: 0; }
 .brand-text { display: flex; flex-direction: column; }
-.brand-jp { font-size: .78rem; color: var(--sakura); font-weight: 700; }
-.brand-sub { font-size: .75rem; color: var(--muted); font-weight: 600; }
-.topnav { display: flex; gap: .15rem; flex-wrap: wrap; justify-content: center; }
+.brand-jp { font-size: .75rem; color: var(--sakura); font-weight: 700; }
+.brand-sub { font-size: .72rem; color: var(--muted); font-weight: 600; }
+.topnav { display: flex; gap: .12rem; flex-wrap: wrap; justify-content: center; }
 .topnav a {
-  text-decoration: none; color: var(--ink); padding: .4rem .62rem; border-radius: 999px; font-weight: 600; font-size: .86rem; white-space: nowrap;
+  text-decoration: none; color: var(--ink); padding: .35rem .48rem; border-radius: 999px; font-weight: 600; font-size: .81rem; white-space: nowrap;
 }
 .topnav a:hover { background: #fff; }
 .topnav a.active { background: var(--ink); color: #fff; }
@@ -559,8 +559,8 @@ main { flex: 1; }
 .teacher-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .65rem; margin-bottom: 1rem; }
 @media (max-width: 700px) { .teacher-filters { grid-template-columns: 1fr; } }
 .table-wrap { overflow-x: auto; padding: 0; }
-.rekap-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
-.rekap-table th, .rekap-table td { padding: .75rem .9rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+.rekap-table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+.rekap-table th, .rekap-table td { padding: .55rem .5rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
 .rekap-table th { background: #fbf7f2; font-weight: 800; white-space: nowrap; }
 
 .print-header, .print-sign { display: none; }
@@ -636,6 +636,7 @@ main { flex: 1; }
 .kanji-char { font-size: 2.5rem; line-height: 1.15; margin-top: .25rem; }
 .kanji-arti { font-weight: 700; font-size: .88rem; line-height: 1.25; }
 .kanji-read { font-size: .78rem; }
+.kanji-modal > .row:first-of-type { padding-right: 2.6rem; }
 .modal-char { font-size: 4.5rem; line-height: 1.1; text-align: center; }
 .kanji-readings {
   display: grid;
