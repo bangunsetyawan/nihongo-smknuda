@@ -500,6 +500,7 @@ main { flex: 1; }
 .dash-badge {
   background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .28);
   padding: .2rem .65rem; border-radius: 999px; font-size: .78rem; font-weight: 700; color: #fff;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .dash-edit-link { color: #dbe1fa; font-size: .84rem; font-weight: 600; }
 .jp-name-pill {
@@ -543,7 +544,7 @@ main { flex: 1; }
   .lb-metrics { grid-column: 1 / -1; text-align: left; padding-left: 2.9rem; }
 }
 
-.teacher-filters { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: .65rem; margin-bottom: 1rem; }
+.teacher-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .65rem; margin-bottom: 1rem; }
 @media (max-width: 700px) { .teacher-filters { grid-template-columns: 1fr; } }
 .table-wrap { overflow-x: auto; padding: 0; }
 .rekap-table { width: 100%; border-collapse: collapse; font-size: .9rem; }

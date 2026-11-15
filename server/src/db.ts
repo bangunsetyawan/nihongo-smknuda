@@ -18,6 +18,8 @@ db.exec(`
     avatar_url TEXT,
     full_name TEXT NOT NULL DEFAULT '',
     nickname TEXT NOT NULL DEFAULT '',
+    jenjang TEXT NOT NULL DEFAULT 'SMK',
+    school TEXT NOT NULL DEFAULT 'SMK NU Darussalam',
     kelas TEXT NOT NULL DEFAULT '',
     jurusan TEXT NOT NULL DEFAULT '',
     japanese_name TEXT NOT NULL DEFAULT '',
@@ -52,6 +54,12 @@ const userCols = db.prepare('PRAGMA table_info(users)').all() as Array<{ name: s
 if (!userCols.some((c) => c.name === 'show_on_leaderboard')) {
   db.exec('ALTER TABLE users ADD COLUMN show_on_leaderboard INTEGER NOT NULL DEFAULT 1');
 }
+if (!userCols.some((c) => c.name === 'jenjang')) {
+  db.exec("ALTER TABLE users ADD COLUMN jenjang TEXT NOT NULL DEFAULT 'SMK'");
+}
+if (!userCols.some((c) => c.name === 'school')) {
+  db.exec("ALTER TABLE users ADD COLUMN school TEXT NOT NULL DEFAULT 'SMK NU Darussalam'");
+}
 
 export interface UserRow {
   id: number;
@@ -61,6 +69,8 @@ export interface UserRow {
   avatar_url: string | null;
   full_name: string;
   nickname: string;
+  jenjang: string;
+  school: string;
   kelas: string;
   jurusan: string;
   japanese_name: string;
@@ -77,6 +87,8 @@ export interface PublicUser {
   avatarUrl: string | null;
   fullName: string;
   nickname: string;
+  jenjang: string;
+  school: string;
   kelas: string;
   jurusan: string;
   japaneseName: string;
@@ -93,6 +105,8 @@ export function toPublicUser(row: UserRow): PublicUser {
     avatarUrl: row.avatar_url,
     fullName: row.full_name,
     nickname: row.nickname || row.full_name.split(' ')[0] || row.email.split('@')[0],
+    jenjang: row.jenjang || 'SMK',
+    school: row.school || 'SMK NU Darussalam',
     kelas: row.kelas,
     jurusan: row.jurusan,
     japaneseName: row.japanese_name,

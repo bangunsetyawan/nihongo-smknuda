@@ -7,6 +7,8 @@ export interface AuthUser {
   avatarUrl: string | null;
   fullName: string;
   nickname: string;
+  jenjang: string;
+  school: string;
   kelas: string;
   jurusan: string;
   japaneseName: string;
@@ -85,6 +87,8 @@ export interface RegisterInput {
   password: string;
   fullName: string;
   nickname: string;
+  jenjang: string;
+  school: string;
   kelas: string;
   jurusan: string;
   japaneseName?: string;
@@ -106,6 +110,8 @@ export async function registerManual(input: RegisterInput): Promise<AuthUser> {
 export interface ProfileInput {
   fullName: string;
   nickname: string;
+  jenjang: string;
+  school: string;
   kelas: string;
   jurusan: string;
   japaneseName?: string;

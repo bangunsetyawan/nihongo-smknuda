@@ -212,14 +212,55 @@ const loginIpEmailLimit = rateLimit(
 );
 const loginIpLimit = rateLimit('login-ip', 100, 15 * 60 * 1000);
 
+const ALLOWED_JENJANG = new Set(['SMP', 'SMA', 'SMK', 'Umum']);
+const ALLOWED_KELAS_BY_JENJANG: Record<string, Set<string>> = {
+  SMP: new Set(['VII', 'VIII', 'IX', 'Alumni / Pembina']),
+  SMA: new Set(['X', 'XI', 'XII', 'Alumni / Pembina']),
+  SMK: new Set(['X', 'XI', 'XII', 'Alumni / Pembina']),
+  Umum: new Set(),
+};
+const ALLOWED_JURUSAN = new Set(['TJKT', 'AKL', 'TKRO', 'Lainnya']);
+
+function validateEducationProfile(body: Record<string, unknown>):
+  | { ok: true; jenjang: string; school: string; kelas: string; jurusan: string }
+  | { ok: false; error: string } {
+  const jenjang = String(body.jenjang ?? '').trim();
+  if (!ALLOWED_JENJANG.has(jenjang)) {
+    return { ok: false, error: 'Jenjang wajib dipilih (SMP, SMA, SMK, atau Umum).' };
+  }
+  const schoolRaw = String(body.school ?? '').trim().slice(0, 80);
+  if (jenjang !== 'Umum' && !schoolRaw) {
+    return { ok: false, error: 'Asal sekolah wajib diisi untuk jenjang SMP/SMA/SMK.' };
+  }
+  const school = jenjang === 'Umum' ? (schoolRaw || 'Umum') : schoolRaw;
+
+  const kelasRaw = String(body.kelas ?? '').trim();
+  let kelas = '';
+  if (jenjang !== 'Umum') {
+    if (!ALLOWED_KELAS_BY_JENJANG[jenjang].has(kelasRaw)) {
+      return { ok: false, error: `Kelas "${kelasRaw || '-'}" tidak sesuai dengan jenjang ${jenjang}.` };
+    }
+    kelas = kelasRaw;
+  }
+
+  let jurusan = '';
+  if (jenjang === 'SMK') {
+    const jurusanRaw = String(body.jurusan ?? '').trim();
+    if (!ALLOWED_JURUSAN.has(jurusanRaw)) {
+      return { ok: false, error: 'Jurusan wajib dipilih untuk jenjang SMK.' };
+    }
+    jurusan = jurusanRaw;
+  }
+
+  return { ok: true, jenjang, school, kelas, jurusan };
+}
+
 app.post('/api/auth/register', registerRateLimit, async (req, res) => {
-  const body = req.body ?? {};
+  const body = (req.body ?? {}) as Record<string, unknown>;
   const email = String(body.email ?? '').trim().toLowerCase();
   const password = String(body.password ?? '');
   const fullName = String(body.fullName ?? '').trim();
   const nickname = String(body.nickname ?? '').trim() || fullName.split(' ')[0] || '';
-  const kelas = String(body.kelas ?? '').trim();
-  const jurusan = String(body.jurusan ?? '').trim();
   const japaneseName = String(body.japaneseName ?? '').trim();
 
   if (!EMAIL_RE.test(email)) {
@@ -234,8 +275,9 @@ app.post('/api/auth/register', registerRateLimit, async (req, res) => {
     res.status(400).json({ error: 'Nama lengkap wajib diisi (minimal 2 huruf).' });
     return;
   }
-  if (!kelas || !jurusan) {
-    res.status(400).json({ error: 'Kelas dan jurusan wajib diisi.' });
+  const edu = validateEducationProfile(body);
+  if (!edu.ok) {
+    res.status(400).json({ error: edu.error });
     return;
   }
 
@@ -250,10 +292,10 @@ app.post('/api/auth/register', registerRateLimit, async (req, res) => {
   const role = 'student';
   const info = db
     .prepare(
-      `INSERT INTO users (email, password_hash, full_name, nickname, kelas, jurusan, japanese_name, role, profile_completed)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`
+      `INSERT INTO users (email, password_hash, full_name, nickname, jenjang, school, kelas, jurusan, japanese_name, role, profile_completed)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
     )
-    .run(email, passwordHash, fullName, nickname, kelas, jurusan, japaneseName, role);
+    .run(email, passwordHash, fullName, nickname, edu.jenjang, edu.school, edu.kelas, edu.jurusan, japaneseName, role);
 
   const userId = Number(info.lastInsertRowid);
   const progress = getOrCreateProgress(userId);
@@ -441,11 +483,9 @@ app.get('/api/auth/google/callback', async (req, res) => {
 
 app.put('/api/profile', requireAuth, (req: AuthRequest, res) => {
   const user = req.user!;
-  const body = req.body ?? {};
+  const body = (req.body ?? {}) as Record<string, unknown>;
   const fullName = String(body.fullName ?? '').trim();
   const nickname = String(body.nickname ?? '').trim() || fullName.split(' ')[0] || '';
-  const kelas = String(body.kelas ?? '').trim();
-  const jurusan = String(body.jurusan ?? '').trim();
   const japaneseName = String(body.japaneseName ?? '').trim();
   const showOnLeaderboard = body.showOnLeaderboard === false ? 0 : 1;
 
@@ -453,16 +493,17 @@ app.put('/api/profile', requireAuth, (req: AuthRequest, res) => {
     res.status(400).json({ error: 'Nama lengkap minimal 2 huruf.' });
     return;
   }
-  if (!kelas || !jurusan) {
-    res.status(400).json({ error: 'Kelas dan jurusan wajib diisi.' });
+  const edu = validateEducationProfile(body);
+  if (!edu.ok) {
+    res.status(400).json({ error: edu.error });
     return;
   }
 
   db.prepare(
     `UPDATE users
-     SET full_name = ?, nickname = ?, kelas = ?, jurusan = ?, japanese_name = ?, show_on_leaderboard = ?, profile_completed = 1
+     SET full_name = ?, nickname = ?, jenjang = ?, school = ?, kelas = ?, jurusan = ?, japanese_name = ?, show_on_leaderboard = ?, profile_completed = 1
      WHERE id = ?`
-  ).run(fullName, nickname, kelas, jurusan, japaneseName, showOnLeaderboard, user.id);
+  ).run(fullName, nickname, edu.jenjang, edu.school, edu.kelas, edu.jurusan, japaneseName, showOnLeaderboard, user.id);
 
   const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id) as UserRow;
   res.json({ user: toPublicUser(updated) });
@@ -856,10 +897,10 @@ app.get('/api/translate', requireAuth, translateRateLimit, async (req, res) => {
   }
 });
 
-app.get('/api/leaderboard', (_req, res) => {
-  const rows = db
-    .prepare(
-      `SELECT u.id, u.nickname, u.japanese_name, u.kelas, u.jurusan, u.avatar_url, u.role,
+app.get('/api/leaderboard', (req, res) => {
+  const jenjangParam = String(req.query.jenjang ?? '').trim();
+  const useJenjangFilter = ALLOWED_JENJANG.has(jenjangParam);
+  const sql = `SELECT u.id, u.nickname, u.japanese_name, u.jenjang, u.school, u.kelas, u.jurusan, u.avatar_url, u.role,
               COALESCE(p.xp, 0) AS xp,
               COALESCE(p.streak, 0) AS streak,
               COALESCE(p.hiragana_mastered, 0) AS hiragana_mastered,
@@ -868,13 +909,16 @@ app.get('/api/leaderboard', (_req, res) => {
        FROM users u
        LEFT JOIN user_progress p ON p.user_id = u.id
        WHERE u.profile_completed = 1 AND u.show_on_leaderboard = 1 AND u.role = 'student'
+       ${useJenjangFilter ? 'AND u.jenjang = ?' : ''}
        ORDER BY xp DESC, streak DESC, hiragana_mastered DESC, u.id ASC
-       LIMIT 100`
-    )
-    .all() as Array<{
+       LIMIT 100`;
+  const stmt = db.prepare(sql);
+  const rows = (useJenjangFilter ? stmt.all(jenjangParam) : stmt.all()) as Array<{
     id: number;
     nickname: string;
     japanese_name: string;
+    jenjang: string;
+    school: string;
     kelas: string;
     jurusan: string;
     avatar_url: string | null;
@@ -891,6 +935,8 @@ app.get('/api/leaderboard', (_req, res) => {
       id: r.id,
       nickname: r.nickname,
       japaneseName: r.japanese_name,
+      jenjang: r.jenjang || 'SMK',
+      school: r.school || 'SMK NU Darussalam',
       kelas: r.kelas,
       jurusan: r.jurusan,
       avatarUrl: r.avatar_url,
@@ -907,7 +953,7 @@ app.get('/api/leaderboard', (_req, res) => {
 app.get('/api/teacher/students', requireAuth, requireTeacher, (_req: AuthRequest, res) => {
   const rows = db
     .prepare(
-      `SELECT u.id, u.email, u.full_name, u.nickname, u.japanese_name, u.kelas, u.jurusan,
+      `SELECT u.id, u.email, u.full_name, u.nickname, u.japanese_name, u.jenjang, u.school, u.kelas, u.jurusan,
               u.role, u.profile_completed, u.created_at, u.last_login_at,
               COALESCE(p.xp, 0) AS xp,
               COALESCE(p.streak, 0) AS streak,
@@ -925,6 +971,8 @@ app.get('/api/teacher/students', requireAuth, requireTeacher, (_req: AuthRequest
     full_name: string;
     nickname: string;
     japanese_name: string;
+    jenjang: string;
+    school: string;
     kelas: string;
     jurusan: string;
     role: string;
@@ -946,6 +994,8 @@ app.get('/api/teacher/students', requireAuth, requireTeacher, (_req: AuthRequest
       fullName: r.full_name,
       nickname: r.nickname,
       japaneseName: r.japanese_name,
+      jenjang: r.jenjang || 'SMK',
+      school: r.school || 'SMK NU Darussalam',
       kelas: r.kelas,
       jurusan: r.jurusan,
       role: r.role,

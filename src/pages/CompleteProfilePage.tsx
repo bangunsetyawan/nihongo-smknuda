@@ -1,15 +1,22 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { updateProfile, useAuth } from '../lib/auth';
-
-const JURUSAN_LIST = ['TJKT', 'AKL', 'TKRO', 'Lainnya'];
-const KELAS_LIST = ['X', 'XI', 'XII', 'Alumni / Pembina'];
+import {
+  JENJANG_LIST,
+  JURUSAN_LIST,
+  KELAS_BY_JENJANG,
+  normalizeJenjang,
+  SCHOOL_PLACEHOLDER,
+  type Jenjang,
+} from '../lib/education';
 
 export default function CompleteProfilePage() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [fullName, setFullName] = useState('');
   const [nickname, setNickname] = useState('');
+  const [jenjang, setJenjang] = useState<Jenjang>('SMK');
+  const [school, setSchool] = useState('SMK NU Darussalam');
   const [kelas, setKelas] = useState('X');
   const [jurusan, setJurusan] = useState('TJKT');
   const [japaneseName, setJapaneseName] = useState('');
@@ -22,14 +29,31 @@ export default function CompleteProfilePage() {
 
   useEffect(() => {
     if (user) {
+      const j = normalizeJenjang(user.jenjang);
+      const allowedKelas = KELAS_BY_JENJANG[j];
       setFullName(user.fullName || '');
       setNickname(user.nickname || '');
-      setKelas(user.kelas || 'X');
-      setJurusan(user.jurusan || 'TJKT');
+      setJenjang(j);
+      setSchool(user.school || (j === 'Umum' ? '' : 'SMK NU Darussalam'));
+      setKelas(j === 'Umum' ? '' : (allowedKelas.includes(user.kelas) ? user.kelas : allowedKelas[0]));
+      setJurusan(j === 'SMK' ? (user.jurusan || 'TJKT') : '');
       setJapaneseName(user.japaneseName || '');
       setShowOnLeaderboard(user.showOnLeaderboard !== false);
     }
   }, [user]);
+
+  function handleJenjangChange(next: Jenjang) {
+    setJenjang(next);
+    const allowed = KELAS_BY_JENJANG[next];
+    if (next === 'Umum') {
+      setKelas('');
+      setJurusan('');
+      if (school === 'SMK NU Darussalam') setSchool('');
+    } else {
+      if (!allowed.includes(kelas)) setKelas(allowed[0]);
+      setJurusan(next === 'SMK' ? (jurusan || 'TJKT') : '');
+    }
+  }
 
   if (loading) {
     return <div className="page narrow"><div className="card">Memuat data akun…</div></div>;
@@ -55,8 +79,10 @@ export default function CompleteProfilePage() {
       await updateProfile({
         fullName,
         nickname: nickname || fullName.split(' ')[0] || '',
-        kelas,
-        jurusan,
+        jenjang,
+        school,
+        kelas: jenjang === 'Umum' ? '' : kelas,
+        jurusan: jenjang === 'SMK' ? jurusan : '',
         japaneseName,
         showOnLeaderboard,
       });
@@ -73,11 +99,11 @@ export default function CompleteProfilePage() {
       <div className="card auth-card">
         <div className="auth-head">
           <span className="hero-kicker jp">プロフィール</span>
-          <h1>{user.profileCompleted ? 'Perbarui Profil Siswa' : 'Lengkapi Profil Dulu'}</h1>
+          <h1>{user.profileCompleted ? 'Perbarui Profil' : 'Lengkapi Profil Dulu'}</h1>
           <p className="muted">
             {user.profileCompleted
               ? `Akun ${user.email}`
-              : `Selamat datang, ${user.email}! Lengkapi data kelas dan jurusanmu agar progres belajarmu tercatat rapi.`}
+              : `Selamat datang, ${user.email}! Lengkapi data jenjang dan asal sekolahmu agar progres belajarmu tercatat rapi.`}
           </p>
         </div>
 
@@ -121,19 +147,48 @@ export default function CompleteProfilePage() {
 
           <div className="auth-grid-2">
             <label className="field">
-              <span>Kelas</span>
-              <select className="input" value={kelas} onChange={(e) => setKelas(e.target.value)}>
-                {KELAS_LIST.map((k) => <option key={k} value={k}>{k}</option>)}
+              <span>Jenjang</span>
+              <select
+                className="input"
+                value={jenjang}
+                onChange={(e) => handleJenjangChange(e.target.value as Jenjang)}
+              >
+                {JENJANG_LIST.map((j) => <option key={j} value={j}>{j}</option>)}
               </select>
             </label>
 
             <label className="field">
-              <span>Jurusan</span>
-              <select className="input" value={jurusan} onChange={(e) => setJurusan(e.target.value)}>
-                {JURUSAN_LIST.map((j) => <option key={j} value={j}>{j}</option>)}
-              </select>
+              <span>{jenjang === 'Umum' ? 'Institusi / Komunitas (opsional)' : 'Asal Sekolah'}</span>
+              <input
+                className="input"
+                required={jenjang !== 'Umum'}
+                maxLength={80}
+                placeholder={SCHOOL_PLACEHOLDER[jenjang]}
+                value={school}
+                onChange={(e) => setSchool(e.target.value)}
+              />
             </label>
           </div>
+
+          {jenjang !== 'Umum' && (
+            <div className="auth-grid-2">
+              <label className="field">
+                <span>Kelas</span>
+                <select className="input" value={kelas} onChange={(e) => setKelas(e.target.value)}>
+                  {KELAS_BY_JENJANG[jenjang].map((k) => <option key={k} value={k}>{k}</option>)}
+                </select>
+              </label>
+
+              {jenjang === 'SMK' && (
+                <label className="field">
+                  <span>Jurusan</span>
+                  <select className="input" value={jurusan} onChange={(e) => setJurusan(e.target.value)}>
+                    {JURUSAN_LIST.map((j) => <option key={j} value={j}>{j}</option>)}
+                  </select>
+                </label>
+              )}
+            </div>
+          )}
 
           <label className="row gap-s" style={{ alignItems: 'center', cursor: 'pointer', fontSize: '.92rem' }}>
             <input

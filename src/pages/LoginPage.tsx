@@ -1,11 +1,16 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { loginManual, registerManual, useAuth } from '../lib/auth';
+import {
+  formatUserAffiliation,
+  JENJANG_LIST,
+  JURUSAN_LIST,
+  KELAS_BY_JENJANG,
+  SCHOOL_PLACEHOLDER,
+  type Jenjang,
+} from '../lib/education';
 import { convertToJapaneseName } from '../lib/japaneseName';
 import { useProgress } from '../lib/progress';
-
-const JURUSAN_LIST = ['TJKT', 'AKL', 'TKRO', 'Lainnya'];
-const KELAS_LIST = ['X', 'XI', 'XII', 'Alumni / Pembina'];
 
 const ERROR_MSG: Record<string, string> = {
   google_not_configured: 'Login Google belum diaktifkan di server. Silakan daftar/masuk manual dulu.',
@@ -33,6 +38,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [nickname, setNickname] = useState(prog.name ?? '');
+  const [jenjang, setJenjang] = useState<Jenjang>('SMK');
+  const [school, setSchool] = useState('');
   const [kelas, setKelas] = useState('X');
   const [jurusan, setJurusan] = useState('TJKT');
   const [japaneseName, setJapaneseName] = useState(() =>
@@ -40,12 +47,24 @@ export default function LoginPage() {
   );
   const [jpTouched, setJpTouched] = useState(false);
 
+  function handleJenjangChange(next: Jenjang) {
+    setJenjang(next);
+    const allowed = KELAS_BY_JENJANG[next];
+    if (next === 'Umum') {
+      setKelas('');
+      setJurusan('');
+    } else {
+      if (!allowed.includes(kelas)) setKelas(allowed[0]);
+      setJurusan(next === 'SMK' ? (jurusan || 'TJKT') : '');
+    }
+  }
+
   if (user) {
     return (
       <div className="page narrow">
         <div className="card auth-card">
           <h1>Sudah masuk sebagai {user.nickname}</h1>
-          <p className="muted">Akun: {user.email} · {user.kelas} {user.jurusan}</p>
+          <p className="muted">Akun: {user.email} · {formatUserAffiliation(user)}</p>
           <div className="row gap-s wrap">
             <Link className="btn primary" to="/">Ke Beranda →</Link>
             <Link className="btn" to="/lengkapi-profil">Edit Profil</Link>
@@ -69,8 +88,10 @@ export default function LoginPage() {
           password,
           fullName,
           nickname: nickname || fullName.split(' ')[0] || '',
-          kelas,
-          jurusan,
+          jenjang,
+          school,
+          kelas: jenjang === 'Umum' ? '' : kelas,
+          jurusan: jenjang === 'SMK' ? jurusan : '',
           japaneseName,
         });
         navigate('/');
@@ -87,9 +108,11 @@ export default function LoginPage() {
       <div className="card auth-card">
         <div className="auth-head">
           <span className="hero-kicker jp">アカウント</span>
-          <h1>{mode === 'login' ? 'Masuk ke Nihongo' : 'Daftar Akun Siswa'}</h1>
+          <h1>{mode === 'login' ? 'Masuk ke Nihongo' : 'Daftar Akun Belajar'}</h1>
           <p className="muted">
-            Simpan progres hafalan Hiragana, Katakana, dan Kosakata kamu secara permanen di server SMKN NU Darussalam.
+            {mode === 'login'
+              ? 'Masuk untuk menyinkronkan progres Hiragana, Katakana, dan Kosakata milikmu.'
+              : 'Terbuka untuk siswa SMP, SMA, SMK, dan masyarakat umum. Progres tersimpan aman di server SMKN NU Darussalam.'}
           </p>
         </div>
 
@@ -204,19 +227,48 @@ export default function LoginPage() {
 
               <div className="auth-grid-2">
                 <label className="field">
-                  <span>Kelas</span>
-                  <select className="input" value={kelas} onChange={(e) => setKelas(e.target.value)}>
-                    {KELAS_LIST.map((k) => <option key={k} value={k}>{k}</option>)}
+                  <span>Jenjang</span>
+                  <select
+                    className="input"
+                    value={jenjang}
+                    onChange={(e) => handleJenjangChange(e.target.value as Jenjang)}
+                  >
+                    {JENJANG_LIST.map((j) => <option key={j} value={j}>{j}</option>)}
                   </select>
                 </label>
 
                 <label className="field">
-                  <span>Jurusan</span>
-                  <select className="input" value={jurusan} onChange={(e) => setJurusan(e.target.value)}>
-                    {JURUSAN_LIST.map((j) => <option key={j} value={j}>{j}</option>)}
-                  </select>
+                  <span>{jenjang === 'Umum' ? 'Institusi / Komunitas (opsional)' : 'Asal Sekolah'}</span>
+                  <input
+                    className="input"
+                    required={jenjang !== 'Umum'}
+                    maxLength={80}
+                    placeholder={SCHOOL_PLACEHOLDER[jenjang]}
+                    value={school}
+                    onChange={(e) => setSchool(e.target.value)}
+                  />
                 </label>
               </div>
+
+              {jenjang !== 'Umum' && (
+                <div className="auth-grid-2">
+                  <label className="field">
+                    <span>Kelas</span>
+                    <select className="input" value={kelas} onChange={(e) => setKelas(e.target.value)}>
+                      {KELAS_BY_JENJANG[jenjang].map((k) => <option key={k} value={k}>{k}</option>)}
+                    </select>
+                  </label>
+
+                  {jenjang === 'SMK' && (
+                    <label className="field">
+                      <span>Jurusan</span>
+                      <select className="input" value={jurusan} onChange={(e) => setJurusan(e.target.value)}>
+                        {JURUSAN_LIST.map((j) => <option key={j} value={j}>{j}</option>)}
+                      </select>
+                    </label>
+                  )}
+                </div>
+              )}
             </>
           )}
 

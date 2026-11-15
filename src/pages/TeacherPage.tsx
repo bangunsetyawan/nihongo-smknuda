@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { allKana } from '../data/kana';
 import { VOCAB } from '../data/vocab';
 import { useAuth } from '../lib/auth';
+import { JENJANG_LIST, JURUSAN_LIST, KELAS_BY_JENJANG, type Jenjang } from '../lib/education';
 import { level } from '../lib/progress';
 
 interface StudentRow {
@@ -11,6 +12,8 @@ interface StudentRow {
   fullName: string;
   nickname: string;
   japaneseName: string;
+  jenjang: string;
+  school: string;
   kelas: string;
   jurusan: string;
   role: string;
@@ -30,6 +33,8 @@ export default function TeacherPage() {
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
+  const [jenjangFilter, setJenjangFilter] = useState('ALL');
+  const [schoolFilter, setSchoolFilter] = useState('ALL');
   const [kelasFilter, setKelasFilter] = useState('ALL');
   const [jurusanFilter, setJurusanFilter] = useState('ALL');
   const [search, setSearch] = useState('');
@@ -59,18 +64,37 @@ export default function TeacherPage() {
     return () => { active = false; };
   }, [user, authLoading]);
 
+  const schoolOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of students) {
+      if (jenjangFilter !== 'ALL' && s.jenjang !== jenjangFilter) continue;
+      if (s.school) set.add(s.school);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, 'id'));
+  }, [students, jenjangFilter]);
+
+  const kelasOptions = useMemo(() => {
+    if (jenjangFilter === 'Umum') return [];
+    if (jenjangFilter === 'SMP' || jenjangFilter === 'SMA' || jenjangFilter === 'SMK') {
+      return KELAS_BY_JENJANG[jenjangFilter as Jenjang];
+    }
+    return ['VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'Alumni / Pembina'];
+  }, [jenjangFilter]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return students.filter((s) => {
+      if (jenjangFilter !== 'ALL' && s.jenjang !== jenjangFilter) return false;
+      if (schoolFilter !== 'ALL' && s.school !== schoolFilter) return false;
       if (kelasFilter !== 'ALL' && s.kelas !== kelasFilter) return false;
       if (jurusanFilter !== 'ALL' && s.jurusan !== jurusanFilter) return false;
       if (q) {
-        const hay = `${s.fullName} ${s.nickname} ${s.email} ${s.japaneseName}`.toLowerCase();
+        const hay = `${s.fullName} ${s.nickname} ${s.email} ${s.school} ${s.japaneseName}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [students, kelasFilter, jurusanFilter, search]);
+  }, [students, jenjangFilter, schoolFilter, kelasFilter, jurusanFilter, search]);
 
   const pct = (n: number, total: number) => Math.min(100, Math.round((n / total) * 100));
 
@@ -89,6 +113,8 @@ export default function TeacherPage() {
       'Panggilan',
       'Nama Jepang',
       'Email',
+      'Jenjang',
+      'Sekolah',
       'Kelas',
       'Jurusan',
       'Role',
@@ -110,6 +136,8 @@ export default function TeacherPage() {
       s.nickname,
       s.japaneseName,
       s.email,
+      s.jenjang,
+      s.school,
       s.kelas,
       s.jurusan,
       s.role,
@@ -212,23 +240,53 @@ export default function TeacherPage() {
       <div className="card teacher-filters no-print">
         <input
           className="input"
-          placeholder="Cari nama, panggilan, atau email…"
+          placeholder="Cari nama, panggilan, sekolah, atau email…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select className="input" value={kelasFilter} onChange={(e) => setKelasFilter(e.target.value)}>
-          <option value="ALL">Semua Kelas</option>
-          <option value="X">Kelas X</option>
-          <option value="XI">Kelas XI</option>
-          <option value="XII">Kelas XII</option>
-          <option value="Alumni / Pembina">Alumni / Pembina</option>
+        <select
+          className="input"
+          aria-label="Filter Jenjang"
+          value={jenjangFilter}
+          onChange={(e) => {
+            const next = e.target.value;
+            setJenjangFilter(next);
+            setSchoolFilter('ALL');
+            setKelasFilter('ALL');
+            if (next !== 'ALL' && next !== 'SMK') setJurusanFilter('ALL');
+          }}
+        >
+          <option value="ALL">Semua Jenjang</option>
+          {JENJANG_LIST.map((j) => <option key={j} value={j}>{j}</option>)}
         </select>
-        <select className="input" value={jurusanFilter} onChange={(e) => setJurusanFilter(e.target.value)}>
+        <select
+          className="input"
+          aria-label="Filter Sekolah"
+          value={schoolFilter}
+          onChange={(e) => setSchoolFilter(e.target.value)}
+        >
+          <option value="ALL">Semua Sekolah</option>
+          {schoolOptions.map((sc) => <option key={sc} value={sc}>{sc}</option>)}
+        </select>
+        <select
+          className="input"
+          aria-label="Filter Kelas"
+          value={kelasFilter}
+          onChange={(e) => setKelasFilter(e.target.value)}
+          disabled={jenjangFilter === 'Umum'}
+        >
+          <option value="ALL">Semua Kelas</option>
+          {kelasOptions.map((k) => <option key={k} value={k}>{k}</option>)}
+        </select>
+        <select
+          className="input"
+          aria-label="Filter Jurusan"
+          value={jurusanFilter}
+          onChange={(e) => setJurusanFilter(e.target.value)}
+          disabled={jenjangFilter !== 'ALL' && jenjangFilter !== 'SMK'}
+        >
           <option value="ALL">Semua Jurusan</option>
-          <option value="TJKT">TJKT</option>
-          <option value="AKL">AKL</option>
-          <option value="TKRO">TKRO</option>
-          <option value="Lainnya">Lainnya</option>
+          {JURUSAN_LIST.map((j) => <option key={j} value={j}>{j}</option>)}
         </select>
       </div>
 
@@ -238,6 +296,8 @@ export default function TeacherPage() {
             <tr>
               <th>No</th>
               <th>Nama Siswa</th>
+              <th>Jenjang</th>
+              <th>Sekolah</th>
               <th>Kelas / Jurusan</th>
               <th>Lv / XP</th>
               <th>Streak</th>
@@ -256,6 +316,8 @@ export default function TeacherPage() {
                   {s.japaneseName && <span className="jp muted small"> · {s.japaneseName}</span>}
                   <div className="muted small">{s.email}</div>
                 </td>
+                <td>{s.jenjang}</td>
+                <td>{s.school || '-'}</td>
                 <td>{s.kelas || '-'} {s.jurusan || ''}</td>
                 <td>Lv {level(s.xp).lv} ({s.xp} XP)</td>
                 <td>{s.streak} hr</td>

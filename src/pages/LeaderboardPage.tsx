@@ -3,12 +3,15 @@ import { Link } from 'react-router-dom';
 import { allKana } from '../data/kana';
 import { VOCAB } from '../data/vocab';
 import { useAuth } from '../lib/auth';
+import { formatUserAffiliation, JENJANG_LIST } from '../lib/education';
 import { level } from '../lib/progress';
 
 interface LeaderEntry {
   id: number;
   nickname: string;
   japaneseName: string;
+  jenjang: string;
+  school: string;
   kelas: string;
   jurusan: string;
   avatarUrl: string | null;
@@ -23,6 +26,7 @@ interface LeaderEntry {
 export default function LeaderboardPage() {
   const { user } = useAuth();
   const [entries, setEntries] = useState<LeaderEntry[]>([]);
+  const [jenjangFilter, setJenjangFilter] = useState('ALL');
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
 
@@ -32,7 +36,10 @@ export default function LeaderboardPage() {
 
   useEffect(() => {
     let active = true;
-    fetch('/api/leaderboard')
+    setLoading(true);
+    setErr('');
+    const qs = jenjangFilter !== 'ALL' ? `?jenjang=${encodeURIComponent(jenjangFilter)}` : '';
+    fetch(`/api/leaderboard${qs}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('Gagal memuat peringkat'))))
       .then((data: { entries: LeaderEntry[] }) => {
         if (active) setEntries(data.entries ?? []);
@@ -44,7 +51,7 @@ export default function LeaderboardPage() {
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, []);
+  }, [jenjangFilter]);
 
   const pct = (n: number, total: number) => Math.min(100, Math.round((n / total) * 100));
 
@@ -56,14 +63,30 @@ export default function LeaderboardPage() {
           <h1>Papan Peringkat Siswa</h1>
           <p className="muted">Peringkat diurutkan berdasarkan total XP, streak harian, dan penguasaan Hiragana.</p>
         </div>
-        {!user && <Link to="/masuk" className="btn primary">Login untuk ikut tercatat</Link>}
+        <div className="row gap-s wrap">
+          <select
+            className="input"
+            aria-label="Filter Jenjang"
+            value={jenjangFilter}
+            onChange={(e) => setJenjangFilter(e.target.value)}
+            style={{ width: 'auto', minWidth: 150 }}
+          >
+            <option value="ALL">Semua Jenjang</option>
+            {JENJANG_LIST.map((j) => <option key={j} value={j}>{j}</option>)}
+          </select>
+          {!user && <Link to="/masuk" className="btn primary">Login untuk ikut tercatat</Link>}
+        </div>
       </div>
 
       {loading && <div className="card">Memuat papan peringkat…</div>}
       {err && <div className="auth-alert">{err}</div>}
 
       {!loading && !err && entries.length === 0 && (
-        <div className="card">Belum ada siswa yang melengkapi profil.</div>
+        <div className="card">
+          {jenjangFilter === 'ALL'
+            ? 'Belum ada siswa yang melengkapi profil.'
+            : `Belum ada peserta untuk jenjang ${jenjangFilter}.`}
+        </div>
       )}
 
       {!loading && entries.length > 0 && (
@@ -90,7 +113,7 @@ export default function LeaderboardPage() {
                     {isMe && <span className="pill" style={{ background: 'var(--ok-soft)', color: 'var(--ok)' }}>Kamu</span>}
                   </div>
                   <div className="muted small">
-                    {e.kelas} {e.jurusan} · Lv {lv} · 🔥 {e.streak} hari
+                    {formatUserAffiliation(e)} · Lv {lv} · 🔥 {e.streak} hari
                   </div>
                 </div>
                 <div className="lb-metrics">

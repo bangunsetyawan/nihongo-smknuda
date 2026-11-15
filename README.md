@@ -98,6 +98,13 @@ npm run preview     # pratinjau hasil build
 - Akun **Owner** (`OWNER_EMAILS`) dan **Guru / Pembina** (`TEACHER_EMAILS`) dipromosikan secara otomatis saat login Google OAuth terverifikasi maupun saat server API dimulai.
 - **Auto-role hanya menaikkan (promote).** Pencabutan role dilakukan manual oleh Owner lewat halaman **Rekap** — tidak ada penurunan otomatis, supaya perubahan daftar email yang tidak sengaja tidak langsung mencabut akses guru. Guru biasa tidak dapat menurunkan sesama guru atau Owner.
 
+### Pendaftaran Universal
+
+- Aplikasi **Nihongo SMKN NU Darussalam** terbuka untuk siswa **SMP**, **SMA**, **SMK**, dan masyarakat **Umum** (SMK NU Darussalam bertindak sebagai tuan rumah).
+- Form pendaftaran dan profil menyediakan field **Jenjang** (`SMP`, `SMA`, `SMK`, `Umum`) dan **Asal Sekolah / Institusi** (wajib diisi untuk SMP/SMA/SMK; opsional untuk Umum dengan nilai bawaan `Umum`).
+- Pilihan **Kelas** menyesuaikan jenjang secara otomatis (`VII–IX` untuk SMP; `X–XII` untuk SMA/SMK; beserta opsi `Alumni / Pembina`, dan disembunyikan untuk Umum). Field **Jurusan** (`TJKT`, `AKL`, `TKRO`, `Lainnya`) hanya tampil dan wajib untuk jenjang `SMK`.
+- **Keputusan akses guru:** Untuk saat ini halaman **Rekap** guru menampilkan peserta dari seluruh sekolah/jenjang (belum dibatasi per-sekolah). Pemisahan data antar-sekolah (*multi-tenant* per guru sekolah) dapat dikembangkan terpisah di masa depan bila dibutuhkan.
+
 ---
 
 ## Struktur proyek

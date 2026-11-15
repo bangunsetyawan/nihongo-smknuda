@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { allKana } from '../data/kana';
 import { VOCAB } from '../data/vocab';
 import { useAuth } from '../lib/auth';
+import { formatUserAffiliation } from '../lib/education';
 import { convertToJapaneseName } from '../lib/japaneseName';
 import { exportProgress, importProgress, level, mastery, resetProgress, setName, streak, useProgress, useSyncStatus } from '../lib/progress';
 
@@ -41,7 +42,9 @@ export default function Home() {
         <section className="hero dash-hero">
           <div className="hero-text">
             <div className="dash-user-meta">
-              <span className="dash-badge">{user.kelas} {user.jurusan}</span>
+              <span className="dash-badge" title={formatUserAffiliation(user)}>
+                {formatUserAffiliation(user) || `${user.kelas} ${user.jurusan}`.trim()}
+              </span>
               {syncStatus === 'syncing' ? (
                 <span className="sync-note">Menyinkronkan…</span>
               ) : syncStatus === 'synced' ? (
