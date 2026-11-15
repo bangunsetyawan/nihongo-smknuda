@@ -477,6 +477,19 @@ main { flex: 1; }
 .auth-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
 @media (max-width: 540px) {
   .auth-grid-2 { grid-template-columns: 1fr; }
+  .profile-card .auth-grid-2 { grid-template-columns: 1fr 1fr; gap: .55rem; }
+  .profile-card .auth-grid-2.profile-edu-row { grid-template-columns: 92px 1fr; }
+}
+@media (max-width: 820px) {
+  .page-profile { padding: .65rem .85rem calc(6.5rem + env(safe-area-inset-bottom)); }
+  .profile-card { margin: .1rem auto; padding: 1rem 1.05rem; }
+  .profile-card .auth-head { margin-bottom: .55rem; }
+  .profile-card .auth-head h1 { font-size: 1.45rem; margin: .1rem 0 .2rem; }
+  .profile-card .auth-head p { margin: 0; font-size: .86rem; line-height: 1.35; }
+  .profile-card .auth-form { gap: .5rem; }
+  .profile-card .field { gap: .18rem; font-size: .82rem; }
+  .profile-card .input { padding: .48rem .7rem; font-size: .92rem; }
+  .profile-card .btn.big { padding: .7rem 1.1rem; font-size: .96rem; }
 }
 
 /* ---------- Quick Name & Dashboard Hero ---------- */

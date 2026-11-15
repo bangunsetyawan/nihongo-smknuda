@@ -95,8 +95,8 @@ export default function CompleteProfilePage() {
   }
 
   return (
-    <div className="page narrow">
-      <div className="card auth-card">
+    <div className="page narrow page-profile">
+      <div className="card auth-card profile-card">
         <div className="auth-head">
           <span className="hero-kicker jp">プロフィール</span>
           <h1>{user.profileCompleted ? 'Perbarui Profil' : 'Lengkapi Profil Dulu'}</h1>
@@ -145,7 +145,7 @@ export default function CompleteProfilePage() {
             </label>
           </div>
 
-          <div className="auth-grid-2">
+          <div className="auth-grid-2 profile-edu-row">
             <label className="field">
               <span>Jenjang</span>
               <select
