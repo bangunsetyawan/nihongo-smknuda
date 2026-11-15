@@ -38,6 +38,12 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000).unref();
 
+function clientIp(req: express.Request): string {
+  const cf = req.headers['cf-connecting-ip'];
+  if (typeof cf === 'string' && cf.trim()) return cf.trim();
+  return req.ip || 'unknown';
+}
+
 function rateLimit(
   prefix: string,
   max: number,
@@ -50,7 +56,7 @@ function rateLimit(
         ? keyFnOrUser(req)
         : keyFnOrUser && req.user
           ? `u:${req.user.id}`
-          : `ip:${req.ip || 'unknown'}`;
+          : `ip:${clientIp(req)}`;
     const key = `${prefix}:${id}`;
     const now = Date.now();
     const cur = rateBuckets.get(key);
@@ -109,7 +115,7 @@ function todayWib(): string {
 }
 
 const app = express();
-app.set('trust proxy', 1);
+app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
@@ -203,12 +209,18 @@ app.get('/api/auth/me', (req, res) => {
   res.json({ user: toPublicUser(user), progress });
 });
 
-const registerRateLimit = rateLimit('register', 5, 60 * 60 * 1000);
+const registerIpLimit = rateLimit('register-ip', 40, 60 * 60 * 1000);
+const registerIpEmailLimit = rateLimit(
+  'register-ie',
+  5,
+  60 * 60 * 1000,
+  (req) => `${clientIp(req)}:${String(req.body?.email ?? '').trim().toLowerCase() || '-'}`,
+);
 const loginIpEmailLimit = rateLimit(
   'login-ie',
   10,
   15 * 60 * 1000,
-  (req) => `${req.ip || 'unknown'}:${String(req.body?.email ?? '').trim().toLowerCase() || '-'}`,
+  (req) => `${clientIp(req)}:${String(req.body?.email ?? '').trim().toLowerCase() || '-'}`,
 );
 const loginIpLimit = rateLimit('login-ip', 100, 15 * 60 * 1000);
 
@@ -255,7 +267,7 @@ function validateEducationProfile(body: Record<string, unknown>):
   return { ok: true, jenjang, school, kelas, jurusan };
 }
 
-app.post('/api/auth/register', registerRateLimit, async (req, res) => {
+app.post('/api/auth/register', registerIpLimit, registerIpEmailLimit, async (req, res) => {
   const body = (req.body ?? {}) as Record<string, unknown>;
   const email = String(body.email ?? '').trim().toLowerCase();
   const password = String(body.password ?? '');
