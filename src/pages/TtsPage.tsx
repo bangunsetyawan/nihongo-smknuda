@@ -100,6 +100,7 @@ export default function TtsPage() {
   }
 
   const activeJp = tab === 'id-ja' ? (translated?.jp ?? '') : jpConverted.jp;
+  const needsTranslate = tab === 'id-ja' && idText.trim().length > 0 && translated?.source !== idText.trim();
 
   return (
     <div className="page narrow">
@@ -138,10 +139,15 @@ export default function TtsPage() {
               <textarea
                 className="input tts-textarea"
                 rows={3}
-                maxLength={200}
+                maxLength={500}
                 placeholder="Contoh: Selamat pagi, nama saya Wahyu"
                 value={idText}
-                onChange={(e) => setIdText(e.target.value)}
+                onChange={(e) => {
+                  setIdText(e.target.value);
+                  if (translated && e.target.value.trim() !== translated.source) {
+                    setTranslated(null);
+                  }
+                }}
               />
             </label>
 
@@ -221,10 +227,13 @@ export default function TtsPage() {
           <button
             type="button"
             className="btn primary big"
-            disabled={!activeJp || speaking}
-            onClick={() => void playAudio(activeJp)}
+            disabled={(tab === 'id-ja' ? !idText.trim() : !activeJp) || speaking || translating}
+            onClick={() => {
+              if (needsTranslate) void runTranslate(undefined, true);
+              else void playAudio(activeJp);
+            }}
           >
-            {speaking ? 'Menyiapkan suara…' : '🔊 Putar Suara Jepang'}
+            {translating ? 'Menerjemahkan…' : speaking ? 'Menyiapkan suara…' : '🔊 Putar Suara Jepang'}
           </button>
           <button
             type="button"

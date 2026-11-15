@@ -416,8 +416,8 @@ app.post('/api/profile/password', requireAuth, async (req: AuthRequest, res) => 
 
 app.get('/api/tts', async (req, res) => {
   const text = String(req.query.text ?? '').trim();
-  if (!text || text.length > 220) {
-    res.status(400).json({ error: 'Teks harus diisi (maksimal 220 karakter).' });
+  if (!text || text.length > 500) {
+    res.status(400).json({ error: 'Teks harus diisi (maksimal 500 karakter).' });
     return;
   }
   const voice = req.query.voice === 'male' ? 'ja-JP-KeitaNeural' : 'ja-JP-NanamiNeural';
@@ -450,8 +450,8 @@ app.get('/api/tts', async (req, res) => {
 
 app.get('/api/translate', async (req, res) => {
   const q = String(req.query.q ?? '').trim();
-  if (!q || q.length > 220) {
-    res.status(400).json({ error: 'Teks harus diisi (maksimal 220 karakter).' });
+  if (!q || q.length > 500) {
+    res.status(400).json({ error: 'Teks harus diisi (maksimal 500 karakter).' });
     return;
   }
   const key = crypto.createHash('sha256').update(q.toLowerCase()).digest('hex');
