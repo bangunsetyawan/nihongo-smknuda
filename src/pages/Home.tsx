@@ -31,18 +31,19 @@ export default function Home() {
     <div className="page">
       <section className="hero">
         <div className="hero-text">
-          <div className="hero-club-badge">
-            <img src="/logo-smk.png" alt="SMKN NU Darussalam" />
-            <span>NIHONGO · SMKN NU DARUSSALAM <b className="jp">日本語</b></span>
+          <div className="hero-top-row">
+            <span className="hero-kicker jp">ようこそ！</span>
+            <div className="hero-kana-inline jp-hand" aria-hidden="true">
+              <span>あ</span><span>い</span><span>う</span>
+            </div>
           </div>
-          <div className="hero-kicker jp">ようこそ！</div>
           <h1>
             {displayName && !editName
               ? <>Halo, {displayName}! 👋</>
-              : <>Nihongo SMKN NU Darussalam</>}
+              : <>Belajar Bahasa Jepang dengan Cepat</>}
           </h1>
           <p className="lead">
-            Portal belajar Bahasa Jepang dari nol — mulai dari Hiragana &amp; Katakana, kosakata IRODORI, hingga persiapan <strong>JLPT N4 / SSW</strong> untuk semua jurusan (TJKT, AKL, TKRO).
+            Aplikasi belajar resmi <strong>SMKN NU Darussalam</strong> — kuasai Hiragana, Katakana, dan kosakata IRODORI menuju <strong>JLPT N4 / SSW</strong>.
           </p>
 
           {editName && !user ? (
@@ -57,7 +58,7 @@ export default function Home() {
                 <Link className="btn big" to="/masuk?tab=register">Daftar Akun</Link>
               </div>
               <Link className="hero-guest-link" to={nextStep.to}>
-                atau lanjut belajar sebagai tamu ({nextStep.label}) →
+                Lanjut tanpa login →
               </Link>
             </div>
           ) : (
@@ -78,10 +79,10 @@ export default function Home() {
           )}
         </div>
         <div className="hero-art">
-          <img src="/logo-smk.png" alt="Logo SMKN NU Darussalam" className="hero-logo-big" />
           <div className="hero-kana jp-hand" aria-hidden="true">
             <span>あ</span><span>い</span><span>う</span>
           </div>
+          <div className="hero-art-sub jp" aria-hidden="true">日本語を楽しく学ぼう</div>
         </div>
       </section>
 
