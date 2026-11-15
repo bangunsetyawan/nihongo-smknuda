@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { isRomaji, toHiragana, toKatakana, toRomaji } from 'wanakana';
 import { speak as browserSpeak } from '../lib/speech';
 
@@ -42,6 +42,30 @@ export default function TtsPage() {
   const [speaking, setSpeaking] = useState(false);
   const [err, setErr] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const objUrlRef = useRef<string | null>(null);
+  const playSeqRef = useRef(0);
+  const ttsAbortRef = useRef<AbortController | null>(null);
+  const translateAbortRef = useRef<AbortController | null>(null);
+
+  function stopAllAudio() {
+    playSeqRef.current += 1;
+    ttsAbortRef.current?.abort();
+    ttsAbortRef.current = null;
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
+    if (objUrlRef.current) {
+      URL.revokeObjectURL(objUrlRef.current);
+      objUrlRef.current = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+  }
+
+  useEffect(() => () => stopAllAudio(), []);
 
   const jpConverted = useMemo(() => {
     const trimmed = jpInput.trim();
@@ -57,26 +81,37 @@ export default function TtsPage() {
 
   async function playAudio(textToSpeak: string) {
     if (!textToSpeak) return;
+    stopAllAudio();
+    const seq = ++playSeqRef.current;
+    const controller = new AbortController();
+    ttsAbortRef.current = controller;
     setErr('');
     setSpeaking(true);
     try {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
       const url = `/api/tts?text=${encodeURIComponent(textToSpeak)}&voice=${voice}&rate=${rate}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: controller.signal });
       if (!res.ok) throw new Error('Server TTS gagal merespons');
       const blob = await res.blob();
+      if (seq !== playSeqRef.current) return;
       const objUrl = URL.createObjectURL(blob);
+      objUrlRef.current = objUrl;
       const audio = new Audio(objUrl);
       audioRef.current = audio;
-      audio.onended = () => URL.revokeObjectURL(objUrl);
+      audio.onended = () => {
+        if (objUrlRef.current === objUrl) {
+          URL.revokeObjectURL(objUrl);
+          objUrlRef.current = null;
+        }
+        if (audioRef.current === audio) audioRef.current = null;
+        if (seq === playSeqRef.current) setSpeaking(false);
+      };
       await audio.play();
-    } catch {
+    } catch (e) {
+      if ((e instanceof DOMException && e.name === 'AbortError') || seq !== playSeqRef.current) {
+        return;
+      }
       setErr('Server audio tidak terjangkau, memakai suara bawaan browser.');
       browserSpeak(textToSpeak, rate === 'slow' ? 0.72 : 0.95);
-    } finally {
       setSpeaking(false);
     }
   }
@@ -84,18 +119,25 @@ export default function TtsPage() {
   async function runTranslate(textOverride?: string, autoSpeak = false) {
     const q = (textOverride ?? idText).trim();
     if (!q) return;
+    translateAbortRef.current?.abort();
+    const controller = new AbortController();
+    translateAbortRef.current = controller;
     setErr('');
     setTranslating(true);
     try {
-      const res = await fetch(`/api/translate?q=${encodeURIComponent(q)}`);
+      const res = await fetch(`/api/translate?q=${encodeURIComponent(q)}`, { signal: controller.signal });
       const data = (await res.json()) as { source?: string; jp?: string; romaji?: string; error?: string };
       if (!res.ok || !data.jp) throw new Error(data.error || 'Gagal menerjemahkan.');
       setTranslated({ source: data.source || q, jp: data.jp, romaji: data.romaji || '' });
       if (autoSpeak) void playAudio(data.jp);
     } catch (e2) {
+      if (e2 instanceof DOMException && e2.name === 'AbortError') return;
       setErr(e2 instanceof Error ? e2.message : 'Gagal menerjemahkan.');
     } finally {
-      setTranslating(false);
+      if (translateAbortRef.current === controller) {
+        translateAbortRef.current = null;
+        setTranslating(false);
+      }
     }
   }
 
@@ -156,10 +198,10 @@ export default function TtsPage() {
                 <button
                   type="button"
                   className="btn primary"
-                  disabled={!idText.trim() || translating}
+                  disabled={!idText.trim() || translating || speaking}
                   onClick={() => void runTranslate(undefined, true)}
                 >
-                  {translating ? 'Menerjemahkan…' : '✨ Terjemahkan & Suarakan'}
+                  {translating ? 'Menerjemahkan…' : speaking ? 'Memutar suara…' : '✨ Terjemahkan & Suarakan'}
                 </button>
                 <button
                   type="button"
@@ -233,12 +275,14 @@ export default function TtsPage() {
               else void playAudio(activeJp);
             }}
           >
-            {translating ? 'Menerjemahkan…' : speaking ? 'Menyiapkan suara…' : '🔊 Putar Suara Jepang'}
+            {translating ? 'Menerjemahkan…' : speaking ? 'Memutar suara…' : '🔊 Putar Suara Jepang'}
           </button>
           <button
             type="button"
             className="btn big"
             onClick={() => {
+              stopAllAudio();
+              setSpeaking(false);
               if (tab === 'id-ja') { setIdText(''); setTranslated(null); }
               else setJpInput('');
             }}
