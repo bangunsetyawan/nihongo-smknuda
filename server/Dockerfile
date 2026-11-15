@@ -10,7 +10,7 @@ RUN npm run build
 FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
-RUN apk add --no-cache python3 py3-pip && \
+RUN apk add --no-cache python3 py3-pip tzdata && \
     pip3 install --break-system-packages --no-cache-dir edge-tts
 COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
