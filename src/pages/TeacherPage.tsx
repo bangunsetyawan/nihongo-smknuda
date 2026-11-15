@@ -40,7 +40,7 @@ export default function TeacherPage() {
 
   useEffect(() => {
     if (authLoading) return;
-    if (!user || user.role !== 'teacher') {
+    if (!user || (user.role !== 'teacher' && user.role !== 'owner')) {
       setLoading(false);
       return;
     }
@@ -144,7 +144,7 @@ export default function TeacherPage() {
     return <div className="page"><div className="card">Memuat halaman pemantauan guru…</div></div>;
   }
 
-  if (!user || user.role !== 'teacher') {
+  if (!user || (user.role !== 'teacher' && user.role !== 'owner')) {
     return (
       <div className="page narrow">
         <div className="card auth-card">
@@ -156,9 +156,9 @@ export default function TeacherPage() {
     );
   }
 
-  const totalStudents = students.filter((s) => s.role !== 'teacher').length;
+  const totalStudents = students.filter((s) => s.role === 'student').length;
   const avgXp = totalStudents > 0
-    ? Math.round(students.filter((s) => s.role !== 'teacher').reduce((acc, s) => acc + s.xp, 0) / totalStudents)
+    ? Math.round(students.filter((s) => s.role === 'student').reduce((acc, s) => acc + s.xp, 0) / totalStudents)
     : 0;
 
   return (
@@ -247,12 +247,17 @@ export default function TeacherPage() {
                 <td>{s.katakanaMastered}/{kataTotal} ({pct(s.katakanaMastered, kataTotal)}%)</td>
                 <td>{s.vocabMastered}/{vocabTotal} ({pct(s.vocabMastered, vocabTotal)}%)</td>
                 <td className="no-print">
-                  {s.id !== user.id && (
+                  {s.id === user.id ? (
+                    <span className="pill">Anda ({s.role === 'owner' ? 'Owner' : 'Pembina'})</span>
+                  ) : s.role === 'owner' ? (
+                    <span className="pill">Owner</span>
+                  ) : s.role === 'teacher' && user.role !== 'owner' ? (
+                    <span className="pill">Pembina</span>
+                  ) : (
                     <button type="button" className="btn small" onClick={() => void toggleRole(s)}>
                       {s.role === 'teacher' ? 'Jadikan Siswa' : 'Jadikan Pembina'}
                     </button>
                   )}
-                  {s.id === user.id && <span className="pill">Anda</span>}
                 </td>
               </tr>
             ))}

@@ -118,7 +118,7 @@ export default function Quiz() {
   useEffect(() => {
     if (done && answers.length) {
       const right = answers.filter((a) => a.correct).length;
-      finishQuiz(right === answers.length ? 50 : 10);
+      finishQuiz(right === answers.length ? 50 : 10, right, answers.length);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [done]);

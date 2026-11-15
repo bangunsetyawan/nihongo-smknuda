@@ -9,8 +9,10 @@ import express from 'express';
 import {
   clearSessionCookie,
   getGoogleConfig,
+  getOwnerEmails,
   getTeacherEmails,
   isRequestSecure,
+  isStaffRole,
   readSessionUser,
   requireAuth,
   requireTeacher,
@@ -22,7 +24,71 @@ import { db, toPublicUser, type UserRow } from './db.js';
 
 const execFileAsync = promisify(execFile);
 const TTS_CACHE_DIR = process.env.TTS_CACHE_DIR || '/data/tts-cache';
+const TTS_CACHE_MAX_BYTES = 400 * 1024 * 1024; // 400 MB
+const TTS_CACHE_TARGET_BYTES = 340 * 1024 * 1024; // bersihkan sampai 340 MB
 fs.mkdirSync(TTS_CACHE_DIR, { recursive: true });
+
+const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of rateBuckets) {
+    if (v.resetAt <= now) rateBuckets.delete(k);
+  }
+}, 5 * 60 * 1000).unref();
+
+function rateLimit(prefix: string, max: number, windowMs: number, keyByUser = false): express.RequestHandler {
+  return (req: AuthRequest, res, next) => {
+    const id = keyByUser && req.user ? `u:${req.user.id}` : `ip:${req.ip || 'unknown'}`;
+    const key = `${prefix}:${id}`;
+    const now = Date.now();
+    const cur = rateBuckets.get(key);
+    if (!cur || cur.resetAt <= now) {
+      rateBuckets.set(key, { count: 1, resetAt: now + windowMs });
+      next();
+      return;
+    }
+    if (cur.count >= max) {
+      res.status(429).json({ error: 'Terlalu banyak permintaan. Coba lagi sebentar.' });
+      return;
+    }
+    cur.count += 1;
+    next();
+  };
+}
+
+let pruningTts = false;
+async function pruneTtsCache() {
+  if (pruningTts) return;
+  pruningTts = true;
+  try {
+    const names = await fs.promises.readdir(TTS_CACHE_DIR);
+    const stats = await Promise.all(
+      names
+        .filter((n) => n.endsWith('.mp3'))
+        .map(async (n) => {
+          const full = path.join(TTS_CACHE_DIR, n);
+          const st = await fs.promises.stat(full);
+          return { full, size: st.size, mtimeMs: st.mtimeMs };
+        })
+    );
+    let total = stats.reduce((acc, s) => acc + s.size, 0);
+    if (total <= TTS_CACHE_MAX_BYTES) return;
+    stats.sort((a, b) => a.mtimeMs - b.mtimeMs);
+    for (const f of stats) {
+      if (total <= TTS_CACHE_TARGET_BYTES) break;
+      await fs.promises.unlink(f.full).catch(() => {});
+      total -= f.size;
+    }
+  } catch (err) {
+    console.error('TTS cache prune error:', err);
+  } finally {
+    pruningTts = false;
+  }
+}
+
+function todayWib(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
+}
 
 const app = express();
 app.set('trust proxy', 1);
@@ -113,7 +179,9 @@ app.get('/api/auth/me', (req, res) => {
   res.json({ user: toPublicUser(user), progress });
 });
 
-app.post('/api/auth/register', async (req, res) => {
+const authRateLimit = rateLimit('auth', 15, 15 * 60 * 1000);
+
+app.post('/api/auth/register', authRateLimit, async (req, res) => {
   const body = req.body ?? {};
   const email = String(body.email ?? '').trim().toLowerCase();
   const password = String(body.password ?? '');
@@ -147,7 +215,8 @@ app.post('/api/auth/register', async (req, res) => {
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
-  const role = getTeacherEmails().has(email) ? 'teacher' : 'student';
+  // Role teacher/owner hanya diberikan otomatis lewat Google OAuth terverifikasi, bukan form daftar.
+  const role = 'student';
   const info = db
     .prepare(
       `INSERT INTO users (email, password_hash, full_name, nickname, kelas, jurusan, japanese_name, role, profile_completed)
@@ -163,7 +232,7 @@ app.post('/api/auth/register', async (req, res) => {
   res.status(201).json({ user: toPublicUser(user), progress });
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authRateLimit, async (req, res) => {
   const body = req.body ?? {};
   const email = String(body.email ?? '').trim().toLowerCase();
   const password = String(body.password ?? '');
@@ -299,7 +368,11 @@ app.get('/api/auth/google/callback', async (req, res) => {
     if (!user) {
       const fullName = (g.name ?? '').trim();
       const nickname = fullName.split(' ')[0] || email.split('@')[0];
-      const role = getTeacherEmails().has(email) ? 'teacher' : 'student';
+      const role = getOwnerEmails().has(email)
+        ? 'owner'
+        : getTeacherEmails().has(email)
+          ? 'teacher'
+          : 'student';
       const info = db
         .prepare(
           `INSERT INTO users (email, google_id, avatar_url, full_name, nickname, role, profile_completed)
@@ -309,7 +382,11 @@ app.get('/api/auth/google/callback', async (req, res) => {
       user = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(info.lastInsertRowid)) as UserRow;
       getOrCreateProgress(user.id);
     } else {
-      const autoTeacher = getTeacherEmails().has(email) ? 'teacher' : user.role;
+      const autoRole = getOwnerEmails().has(email)
+        ? 'owner'
+        : getTeacherEmails().has(email) && user.role !== 'owner'
+          ? 'teacher'
+          : user.role;
       db.prepare(
         `UPDATE users
          SET google_id = COALESCE(google_id, ?),
@@ -317,7 +394,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
              role = ?,
              last_login_at = datetime('now')
          WHERE id = ?`
-      ).run(googleId, g.picture ?? null, autoTeacher, user.id);
+      ).run(googleId, g.picture ?? null, autoRole, user.id);
       user = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id) as UserRow;
     }
 
@@ -337,6 +414,7 @@ app.put('/api/profile', requireAuth, (req: AuthRequest, res) => {
   const kelas = String(body.kelas ?? '').trim();
   const jurusan = String(body.jurusan ?? '').trim();
   const japaneseName = String(body.japaneseName ?? '').trim();
+  const showOnLeaderboard = body.showOnLeaderboard === false ? 0 : 1;
 
   if (fullName.length < 2) {
     res.status(400).json({ error: 'Nama lengkap minimal 2 huruf.' });
@@ -349,9 +427,9 @@ app.put('/api/profile', requireAuth, (req: AuthRequest, res) => {
 
   db.prepare(
     `UPDATE users
-     SET full_name = ?, nickname = ?, kelas = ?, jurusan = ?, japanese_name = ?, profile_completed = 1
+     SET full_name = ?, nickname = ?, kelas = ?, jurusan = ?, japanese_name = ?, show_on_leaderboard = ?, profile_completed = 1
      WHERE id = ?`
-  ).run(fullName, nickname, kelas, jurusan, japaneseName, user.id);
+  ).run(fullName, nickname, kelas, jurusan, japaneseName, showOnLeaderboard, user.id);
 
   const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id) as UserRow;
   res.json({ user: toPublicUser(updated) });
@@ -362,23 +440,8 @@ app.get('/api/progress', requireAuth, (req: AuthRequest, res) => {
   res.json({ progress });
 });
 
-app.put('/api/progress', requireAuth, (req: AuthRequest, res) => {
-  const payload = req.body as ProgressPayload | undefined;
-  if (!payload || typeof payload !== 'object' || typeof payload.kana !== 'object') {
-    res.status(400).json({ error: 'Format progres tidak valid.' });
-    return;
-  }
-
-  const clean: ProgressPayload = {
-    kana: payload.kana ?? {},
-    vocab: payload.vocab ?? {},
-    xp: typeof payload.xp === 'number' ? Math.max(0, Math.floor(payload.xp)) : 0,
-    days: Array.isArray(payload.days) ? [...new Set(payload.days)].slice(-365) : [],
-    quizzes: typeof payload.quizzes === 'number' ? Math.max(0, Math.floor(payload.quizzes)) : 0,
-    name: typeof payload.name === 'string' ? payload.name.slice(0, 32) : undefined,
-  };
-
-  const sum = summarizeProgress(clean);
+function saveProgressRow(userId: number, data: ProgressPayload) {
+  const sum = summarizeProgress(data);
   db.prepare(
     `INSERT INTO user_progress (user_id, data_json, xp, hiragana_mastered, katakana_mastered, vocab_mastered, streak, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
@@ -391,16 +454,103 @@ app.put('/api/progress', requireAuth, (req: AuthRequest, res) => {
        streak = excluded.streak,
        updated_at = datetime('now')`
   ).run(
-    req.user!.id,
-    JSON.stringify(clean),
+    userId,
+    JSON.stringify(data),
     sum.xp,
     sum.hiraganaMastered,
     sum.katakanaMastered,
     sum.vocabMastered,
     sum.streak
   );
+  return sum;
+}
 
-  res.json({ ok: true, summary: sum });
+app.put('/api/progress', requireAuth, (req: AuthRequest, res) => {
+  const payload = req.body as ProgressPayload | undefined;
+  if (!payload || typeof payload !== 'object' || typeof payload.kana !== 'object') {
+    res.status(400).json({ error: 'Format progres tidak valid.' });
+    return;
+  }
+
+  // Jangan percaya xp, days, atau quizzes dari browser — pertahankan nilai resmi server.
+  const current = getOrCreateProgress(req.user!.id);
+  const clean: ProgressPayload = {
+    kana: current.kana ?? {},
+    vocab: current.vocab ?? {},
+    xp: current.xp ?? 0,
+    days: Array.isArray(current.days) ? current.days : [],
+    quizzes: current.quizzes ?? 0,
+    name: typeof payload.name === 'string' ? payload.name.slice(0, 32) : current.name,
+  };
+
+  const sum = saveProgressRow(req.user!.id, clean);
+  res.json({ ok: true, progress: clean, summary: sum });
+});
+
+const practiceRateLimit = rateLimit('practice', 120, 60 * 1000, true);
+
+app.post('/api/practice/record', requireAuth, practiceRateLimit, (req: AuthRequest, res) => {
+  const body = req.body ?? {};
+  const type = String(body.type ?? '');
+  const current = getOrCreateProgress(req.user!.id);
+  const next: ProgressPayload = {
+    kana: { ...(current.kana ?? {}) },
+    vocab: { ...(current.vocab ?? {}) },
+    xp: typeof current.xp === 'number' ? current.xp : 0,
+    days: Array.isArray(current.days) ? [...current.days] : [],
+    quizzes: typeof current.quizzes === 'number' ? current.quizzes : 0,
+    name: current.name,
+  };
+  const today = todayWib();
+  const ensureToday = () => {
+    if (!next.days!.includes(today)) {
+      next.days = [...next.days!, today].slice(-365);
+    }
+  };
+
+  if (type === 'kana_answer') {
+    const ch = String(body.char ?? '').trim();
+    if (!ch || ch.length > 4) {
+      res.status(400).json({ error: 'Karakter kana tidak valid.' });
+      return;
+    }
+    const correct = Boolean(body.correct);
+    const prev = next.kana![ch] ?? { c: 0, w: 0, s: 0, t: 0 };
+    next.kana![ch] = correct
+      ? { c: (prev.c ?? 0) + 1, w: prev.w ?? 0, s: (prev.s ?? 0) + 1, t: Date.now() }
+      : { c: prev.c ?? 0, w: (prev.w ?? 0) + 1, s: 0, t: Date.now() };
+    next.xp = (next.xp ?? 0) + (correct ? 10 : 1);
+    ensureToday();
+  } else if (type === 'quiz_finish') {
+    const totalCount = Math.floor(Number(body.totalCount ?? 0));
+    const correctCount = Math.floor(Number(body.correctCount ?? 0));
+    if (!Number.isFinite(totalCount) || totalCount < 1 || totalCount > 50 || correctCount < 0 || correctCount > totalCount) {
+      res.status(400).json({ error: 'Skor kuis tidak valid.' });
+      return;
+    }
+    const bonusXp = correctCount === totalCount ? 50 : 10;
+    next.quizzes = (next.quizzes ?? 0) + 1;
+    next.xp = (next.xp ?? 0) + bonusXp;
+    ensureToday();
+  } else if (type === 'vocab_toggle' || type === 'vocab_mark') {
+    const id = String(body.id ?? '').trim();
+    if (!id || id.length > 64) {
+      res.status(400).json({ error: 'ID kosakata tidak valid.' });
+      return;
+    }
+    const hadKey = id in next.vocab!;
+    const nextVal = type === 'vocab_toggle' ? !next.vocab![id] : Boolean(body.known);
+    const firstTime = nextVal && !hadKey;
+    next.vocab![id] = nextVal;
+    if (firstTime) next.xp = (next.xp ?? 0) + 5;
+    if (nextVal) ensureToday();
+  } else {
+    res.status(400).json({ error: 'Tipe latihan tidak dikenali.' });
+    return;
+  }
+
+  const sum = saveProgressRow(req.user!.id, next);
+  res.json({ ok: true, progress: next, summary: sum });
 });
 
 app.post('/api/profile/password', requireAuth, async (req: AuthRequest, res) => {
@@ -414,7 +564,10 @@ app.post('/api/profile/password', requireAuth, async (req: AuthRequest, res) => 
   res.json({ ok: true });
 });
 
-app.get('/api/tts', async (req, res) => {
+const ttsRateLimit = rateLimit('tts', 40, 60 * 1000, true);
+const translateRateLimit = rateLimit('translate', 30, 60 * 1000, true);
+
+app.get('/api/tts', requireAuth, ttsRateLimit, async (req, res) => {
   const text = String(req.query.text ?? '').trim();
   if (!text || text.length > 500) {
     res.status(400).json({ error: 'Teks harus diisi (maksimal 500 karakter).' });
@@ -438,6 +591,7 @@ app.get('/api/tts', async (req, res) => {
         tmpPath,
       ], { timeout: 15000 });
       fs.renameSync(tmpPath, filePath);
+      void pruneTtsCache();
     }
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
@@ -501,7 +655,7 @@ async function translateIdToJa(q: string): Promise<{ jp: string; romaji: string 
   throw new Error(`All translate providers failed: ${errors.join(' | ')}`);
 }
 
-app.get('/api/translate', async (req, res) => {
+app.get('/api/translate', requireAuth, translateRateLimit, async (req, res) => {
   const q = String(req.query.q ?? '').trim();
   if (!q || q.length > 500) {
     res.status(400).json({ error: 'Teks harus diisi (maksimal 500 karakter).' });
@@ -546,7 +700,7 @@ app.get('/api/leaderboard', (_req, res) => {
               COALESCE(p.vocab_mastered, 0) AS vocab_mastered
        FROM users u
        LEFT JOIN user_progress p ON p.user_id = u.id
-       WHERE u.profile_completed = 1
+       WHERE u.profile_completed = 1 AND u.show_on_leaderboard = 1
        ORDER BY xp DESC, streak DESC, hiragana_mastered DESC, u.id ASC
        LIMIT 100`
     )
@@ -648,16 +802,39 @@ app.patch('/api/teacher/students/:id/role', requireAuth, requireTeacher, (req: A
     res.status(400).json({ error: 'ID atau role tidak valid.' });
     return;
   }
-  if (id === req.user!.id && role !== 'teacher') {
+  const target = db.prepare('SELECT id, role FROM users WHERE id = ?').get(id) as { id: number; role: string } | undefined;
+  if (!target) {
+    res.status(404).json({ error: 'Pengguna tidak ditemukan.' });
+    return;
+  }
+  if (target.role === 'owner') {
+    res.status(403).json({ error: 'Role owner tidak dapat diubah.' });
+    return;
+  }
+  if (id === req.user!.id && role !== req.user!.role) {
     res.status(400).json({ error: 'Tidak dapat menurunkan role akun sendiri.' });
+    return;
+  }
+  if (target.role === 'teacher' && req.user!.role !== 'owner') {
+    res.status(403).json({ error: 'Hanya owner yang dapat mengubah role sesama guru.' });
+    return;
+  }
+  if (!isStaffRole(req.user!.role)) {
+    res.status(403).json({ error: 'Akses ditolak.' });
     return;
   }
   db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);
   res.json({ ok: true, id, role });
 });
 
+const ownerEmails = getOwnerEmails();
 for (const email of getTeacherEmails()) {
-  db.prepare("UPDATE users SET role = 'teacher' WHERE email = ?").run(email);
+  if (!ownerEmails.has(email)) {
+    db.prepare("UPDATE users SET role = 'teacher' WHERE email = ? AND role != 'owner'").run(email);
+  }
+}
+for (const email of ownerEmails) {
+  db.prepare("UPDATE users SET role = 'owner' WHERE email = ?").run(email);
 }
 
 const port = Number(process.env.PORT || 3000);

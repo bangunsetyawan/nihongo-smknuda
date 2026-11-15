@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { isRomaji, toHiragana, toKatakana, toRomaji } from 'wanakana';
+import { useAuth } from '../lib/auth';
 import { speak as browserSpeak } from '../lib/speech';
 
 const ID_TEMPLATES = [
@@ -21,6 +23,7 @@ const JP_SAMPLES = [
 ];
 
 export default function TtsPage() {
+  const { user, loading: authLoading } = useAuth();
   const [tab, setTab] = useState<'id-ja' | 'jp'>('id-ja');
 
   // Mode 1: Indonesia -> Jepang
@@ -89,7 +92,12 @@ export default function TtsPage() {
     setSpeaking(true);
     try {
       const url = `/api/tts?text=${encodeURIComponent(textToSpeak)}&voice=${voice}&rate=${rate}`;
-      const res = await fetch(url, { signal: controller.signal });
+      const res = await fetch(url, { signal: controller.signal, credentials: 'include' });
+      if (res.status === 401) {
+        setErr('Silakan login terlebih dahulu untuk memakai suara server AI.');
+        if (seq === playSeqRef.current) setSpeaking(false);
+        return;
+      }
       if (!res.ok) throw new Error('Server TTS gagal merespons');
       const blob = await res.blob();
       if (seq !== playSeqRef.current) return;
@@ -125,7 +133,8 @@ export default function TtsPage() {
     setErr('');
     setTranslating(true);
     try {
-      const res = await fetch(`/api/translate?q=${encodeURIComponent(q)}`, { signal: controller.signal });
+      const res = await fetch(`/api/translate?q=${encodeURIComponent(q)}`, { signal: controller.signal, credentials: 'include' });
+      if (res.status === 401) throw new Error('Silakan login terlebih dahulu untuk memakai terjemahan & suara AI.');
       const data = (await res.json()) as { source?: string; jp?: string; romaji?: string; error?: string };
       if (!res.ok || !data.jp) throw new Error(data.error || 'Gagal menerjemahkan.');
       setTranslated({ source: data.source || q, jp: data.jp, romaji: data.romaji || '' });
@@ -155,6 +164,20 @@ export default function TtsPage() {
           </p>
         </div>
       </div>
+
+      {!authLoading && !user && (
+        <div className="card" style={{ marginBottom: '1rem', borderColor: 'var(--sakura)', background: 'var(--sakura-soft)' }}>
+          <div className="row between wrap gap-s">
+            <div>
+              <strong>Khusus Siswa &amp; Guru SMKN NU Darussalam</strong>
+              <p className="muted small" style={{ margin: '.2rem 0 0' }}>
+                Silakan masuk dengan akun sekolah/Google untuk memakai fitur terjemah &amp; suara AI server.
+              </p>
+            </div>
+            <Link to="/masuk" className="btn primary small">Masuk / Daftar →</Link>
+          </div>
+        </div>
+      )}
 
       <div className="auth-tabs" style={{ marginBottom: '1rem' }}>
         <button

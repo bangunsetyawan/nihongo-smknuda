@@ -12,6 +12,7 @@ export interface AuthUser {
   japaneseName: string;
   role: string;
   profileCompleted: boolean;
+  showOnLeaderboard: boolean;
   hasGoogle: boolean;
 }
 
@@ -108,6 +109,7 @@ export interface ProfileInput {
   kelas: string;
   jurusan: string;
   japaneseName?: string;
+  showOnLeaderboard?: boolean;
 }
 
 export async function updateProfile(input: ProfileInput): Promise<AuthUser> {

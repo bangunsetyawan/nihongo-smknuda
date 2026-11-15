@@ -13,6 +13,7 @@ export default function CompleteProfilePage() {
   const [kelas, setKelas] = useState('X');
   const [jurusan, setJurusan] = useState('TJKT');
   const [japaneseName, setJapaneseName] = useState('');
+  const [showOnLeaderboard, setShowOnLeaderboard] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -26,6 +27,7 @@ export default function CompleteProfilePage() {
       setKelas(user.kelas || 'X');
       setJurusan(user.jurusan || 'TJKT');
       setJapaneseName(user.japaneseName || '');
+      setShowOnLeaderboard(user.showOnLeaderboard !== false);
     }
   }, [user]);
 
@@ -56,6 +58,7 @@ export default function CompleteProfilePage() {
         kelas,
         jurusan,
         japaneseName,
+        showOnLeaderboard,
       });
       navigate('/');
     } catch (e2) {
@@ -132,6 +135,15 @@ export default function CompleteProfilePage() {
             </label>
           </div>
 
+          <label className="row gap-s" style={{ alignItems: 'center', cursor: 'pointer', fontSize: '.92rem' }}>
+            <input
+              type="checkbox"
+              checked={showOnLeaderboard}
+              onChange={(e) => setShowOnLeaderboard(e.target.checked)}
+            />
+            <span>Tampilkan nama panggilan &amp; progres saya di Papan Peringkat</span>
+          </label>
+
           <div className="row gap-s wrap">
             <button className="btn primary big" type="submit" disabled={busy}>
               {busy ? 'Menyimpan…' : 'Simpan Profil →'}
@@ -180,7 +192,16 @@ export default function CompleteProfilePage() {
                 onChange={(e) => setNewPassword(e.target.value)}
               />
             </label>
-            <div className="row gap-s wrap">
+            <label className="row gap-s" style={{ alignItems: 'center', cursor: 'pointer', fontSize: '.92rem' }}>
+            <input
+              type="checkbox"
+              checked={showOnLeaderboard}
+              onChange={(e) => setShowOnLeaderboard(e.target.checked)}
+            />
+            <span>Tampilkan nama panggilan &amp; progres saya di Papan Peringkat</span>
+          </label>
+
+          <div className="row gap-s wrap">
               <button className="btn small" type="submit" disabled={pwBusy}>
                 {pwBusy ? 'Menyimpan…' : 'Simpan Password'}
               </button>

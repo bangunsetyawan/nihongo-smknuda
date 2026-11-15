@@ -56,12 +56,26 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   next();
 }
 
+export function isStaffRole(role: string): boolean {
+  return role === 'teacher' || role === 'owner';
+}
+
 export function requireTeacher(req: AuthRequest, res: Response, next: NextFunction) {
-  if (!req.user || req.user.role !== 'teacher') {
+  if (!req.user || !isStaffRole(req.user.role)) {
     res.status(403).json({ error: 'Halaman ini khusus untuk guru / pembina.' });
     return;
   }
   next();
+}
+
+export function getOwnerEmails(): Set<string> {
+  const raw = process.env.OWNER_EMAILS || 'bangun164@gmail.com';
+  return new Set(
+    raw
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
+  );
 }
 
 export function getTeacherEmails(): Set<string> {

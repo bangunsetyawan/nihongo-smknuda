@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { NavLink, Route, Routes, useLocation, useNavigate, Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { NavLink, Route, Routes, useLocation, Link } from 'react-router-dom';
 import Home from './pages/Home';
 import KanaPage from './pages/KanaPage';
 import Quiz from './pages/Quiz';
@@ -25,16 +25,11 @@ const NAV = [
 
 export default function App() {
   const { pathname } = useLocation();
-  const navigate = useNavigate();
   const { user, loading } = useAuth();
+  const [moreOpen, setMoreOpen] = useState(false);
 
-  useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
+  useEffect(() => { window.scrollTo(0, 0); setMoreOpen(false); }, [pathname]);
   useEffect(() => { void initAuth(); }, []);
-  useEffect(() => {
-    if (!loading && user && !user.profileCompleted && pathname !== '/lengkapi-profil') {
-      navigate('/lengkapi-profil', { replace: true });
-    }
-  }, [loading, user, pathname, navigate]);
 
   return (
     <div className="app">
@@ -57,7 +52,7 @@ export default function App() {
             <NavLink to="/peringkat">Peringkat</NavLink>
             <NavLink to="/panduan">Panduan</NavLink>
             <NavLink to="/jalur">Jalur N4</NavLink>
-            {user?.role === 'teacher' && <NavLink to="/rekap">Rekap Guru</NavLink>}
+            {(user?.role === 'teacher' || user?.role === 'owner') && <NavLink to="/rekap">Rekap Guru</NavLink>}
           </nav>
           {!loading && (
             user ? (
@@ -112,6 +107,32 @@ export default function App() {
         <div className="muted small">がんばって！ Semangat belajar!</div>
       </footer>
 
+      {moreOpen && (
+        <div className="mobile-sheet-backdrop no-print" onClick={() => setMoreOpen(false)}>
+          <div className="mobile-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="mobile-sheet-head">
+              <strong>Menu Lainnya</strong>
+              <button type="button" className="btn small" onClick={() => setMoreOpen(false)}>Tutup</button>
+            </div>
+            <div className="mobile-sheet-grid">
+              <NavLink to="/suara" className="mobile-sheet-item">🔊 Suara &amp; Terjemah</NavLink>
+              <NavLink to="/peringkat" className="mobile-sheet-item">🏆 Peringkat</NavLink>
+              <NavLink to="/panduan" className="mobile-sheet-item">📘 Panduan</NavLink>
+              <NavLink to="/jalur" className="mobile-sheet-item">🗺️ Jalur N4</NavLink>
+              <NavLink to="/sumber" className="mobile-sheet-item">📚 Sumber Belajar</NavLink>
+              {(user?.role === 'teacher' || user?.role === 'owner') && (
+                <NavLink to="/rekap" className="mobile-sheet-item">📊 Rekap Guru</NavLink>
+              )}
+              {user ? (
+                <NavLink to="/lengkapi-profil" className="mobile-sheet-item">👤 Edit Profil</NavLink>
+              ) : (
+                <NavLink to="/masuk" className="mobile-sheet-item">🔑 Masuk / Daftar</NavLink>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <nav className="bottomnav no-print">
         {NAV.map((n) => (
           <NavLink key={n.to} to={n.to} end={n.end}>
@@ -119,6 +140,14 @@ export default function App() {
             <span>{n.label}</span>
           </NavLink>
         ))}
+        <button
+          type="button"
+          className={`bottomnav-btn ${moreOpen || ['/suara', '/peringkat', '/panduan', '/jalur', '/sumber', '/rekap', '/lengkapi-profil', '/masuk'].includes(pathname) ? 'active' : ''}`}
+          onClick={() => setMoreOpen((v) => !v)}
+        >
+          <span className="bn-icon">☰</span>
+          <span>Lainnya</span>
+        </button>
       </nav>
     </div>
   );

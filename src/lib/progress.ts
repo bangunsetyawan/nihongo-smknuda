@@ -62,6 +62,33 @@ export function setCloudSync(enabled: boolean) {
   }
 }
 
+async function recordPracticeOnServer(payload: Record<string, unknown>) {
+  if (!cloudSyncEnabled) return;
+  try {
+    const res = await fetch('/api/practice/record', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      keepalive: true,
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as { progress?: Progress };
+    if (data.progress) {
+      state = {
+        ...state,
+        ...data.progress,
+        kana: data.progress.kana ?? state.kana,
+        vocab: data.progress.vocab ?? state.vocab,
+      };
+      try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
+      subs.forEach((f) => f());
+    }
+  } catch {
+    // Abaikan jika offline sementara
+  }
+}
+
 export function mergeServerProgress(serverProg?: Partial<Progress> | null) {
   const local = state;
   const srv = serverProg ?? {};
@@ -81,19 +108,19 @@ export function mergeServerProgress(serverProg?: Partial<Progress> | null) {
   for (const [id, val] of Object.entries(local.vocab ?? {})) {
     mergedVocab[id] = Boolean(mergedVocab[id] || val);
   }
-  const mergedDays = Array.from(new Set([...(srv.days ?? []), ...(local.days ?? [])])).sort();
   const merged: Progress = {
     kana: mergedKana,
     vocab: mergedVocab,
-    xp: Math.max(local.xp ?? 0, srv.xp ?? 0),
-    days: mergedDays,
-    quizzes: Math.max(local.quizzes ?? 0, srv.quizzes ?? 0),
+    // XP, hari aktif, dan jumlah kuis mengikuti angka resmi server saat login.
+    xp: typeof srv.xp === 'number' ? srv.xp : 0,
+    days: Array.isArray(srv.days) ? srv.days : [],
+    quizzes: typeof srv.quizzes === 'number' ? srv.quizzes : 0,
     name: local.name || srv.name,
   };
   state = merged;
   try { localStorage.setItem(KEY, JSON.stringify(merged)); } catch {}
   subs.forEach((f) => f());
-  if (cloudSyncEnabled) void pushToServer(merged);
+  if (cloudSyncEnabled && local.name && !srv.name) void pushToServer(merged);
 }
 
 function load(): Progress {
@@ -130,22 +157,30 @@ export function today() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function saveLocalOnly(next: Progress) {
+  state = next;
+  try { localStorage.setItem(KEY, JSON.stringify(next)); } catch {}
+  subs.forEach((f) => f());
+}
+
 export function recordAnswer(char: string, correct: boolean) {
   const prev = state.kana[char] ?? { c: 0, w: 0, s: 0, t: 0 };
   const stat: KanaStat = correct
     ? { c: prev.c + 1, w: prev.w, s: prev.s + 1, t: Date.now() }
     : { c: prev.c, w: prev.w + 1, s: 0, t: Date.now() };
   const d = today();
-  save({
+  saveLocalOnly({
     ...state,
     kana: { ...state.kana, [char]: stat },
     xp: state.xp + (correct ? 10 : 1),
     days: state.days.includes(d) ? state.days : [...state.days, d],
   });
+  void recordPracticeOnServer({ type: 'kana_answer', char, correct });
 }
 
-export function finishQuiz(bonusXp: number) {
-  save({ ...state, quizzes: state.quizzes + 1, xp: state.xp + bonusXp });
+export function finishQuiz(bonusXp: number, correctCount = 0, totalCount = 1) {
+  saveLocalOnly({ ...state, quizzes: state.quizzes + 1, xp: state.xp + bonusXp });
+  void recordPracticeOnServer({ type: 'quiz_finish', correctCount, totalCount });
 }
 
 export function toggleVocab(id: string) {
@@ -153,23 +188,26 @@ export function toggleVocab(id: string) {
   const nextVal = !prev[id];
   const firstTime = nextVal && !(id in prev);
   const d = today();
-  save({
+  saveLocalOnly({
     ...state,
     vocab: { ...prev, [id]: nextVal },
     xp: state.xp + (firstTime ? 5 : 0),
     days: nextVal && !state.days.includes(d) ? [...state.days, d] : state.days,
   });
+  void recordPracticeOnServer({ type: 'vocab_toggle', id });
 }
 
 export function markVocab(id: string, known: boolean) {
   const prev = state.vocab ?? {};
+  const firstTime = known && !(id in prev);
   const d = today();
-  save({
+  saveLocalOnly({
     ...state,
     vocab: { ...prev, [id]: known },
-    xp: state.xp + (known ? 10 : 1),
-    days: state.days.includes(d) ? state.days : [...state.days, d],
+    xp: state.xp + (firstTime ? 5 : 0),
+    days: known && !state.days.includes(d) ? [...state.days, d] : state.days,
   });
+  void recordPracticeOnServer({ type: 'vocab_mark', id, known });
 }
 
 export function setName(name: string) {

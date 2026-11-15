@@ -23,6 +23,7 @@ db.exec(`
     japanese_name TEXT NOT NULL DEFAULT '',
     role TEXT NOT NULL DEFAULT 'student',
     profile_completed INTEGER NOT NULL DEFAULT 0,
+    show_on_leaderboard INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     last_login_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -47,6 +48,11 @@ db.exec(`
   );
 `);
 
+const userCols = db.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>;
+if (!userCols.some((c) => c.name === 'show_on_leaderboard')) {
+  db.exec('ALTER TABLE users ADD COLUMN show_on_leaderboard INTEGER NOT NULL DEFAULT 1');
+}
+
 export interface UserRow {
   id: number;
   email: string;
@@ -60,6 +66,7 @@ export interface UserRow {
   japanese_name: string;
   role: string;
   profile_completed: number;
+  show_on_leaderboard: number;
   created_at: string;
   last_login_at: string;
 }
@@ -75,6 +82,7 @@ export interface PublicUser {
   japaneseName: string;
   role: string;
   profileCompleted: boolean;
+  showOnLeaderboard: boolean;
   hasGoogle: boolean;
 }
 
@@ -90,6 +98,7 @@ export function toPublicUser(row: UserRow): PublicUser {
     japaneseName: row.japanese_name,
     role: row.role,
     profileCompleted: row.profile_completed === 1,
+    showOnLeaderboard: row.show_on_leaderboard !== 0,
     hasGoogle: Boolean(row.google_id),
   };
 }
