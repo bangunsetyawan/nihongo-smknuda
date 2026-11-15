@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { NavLink, Route, Routes, useLocation, Link } from 'react-router-dom';
+import { NavLink, Route, Routes, useLocation, useNavigate, Link } from 'react-router-dom';
 import Home from './pages/Home';
 import KanaPage from './pages/KanaPage';
 import Quiz from './pages/Quiz';
@@ -7,6 +7,9 @@ import VocabPage from './pages/VocabPage';
 import Guide from './pages/Guide';
 import Roadmap from './pages/Roadmap';
 import Resources from './pages/Resources';
+import LoginPage from './pages/LoginPage';
+import CompleteProfilePage from './pages/CompleteProfilePage';
+import { initAuth, logout, useAuth } from './lib/auth';
 
 const NAV = [
   { to: '/', label: 'Beranda', icon: '🏠', end: true },
@@ -18,7 +21,16 @@ const NAV = [
 
 export default function App() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const { user, loading } = useAuth();
+
   useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
+  useEffect(() => { void initAuth(); }, []);
+  useEffect(() => {
+    if (!loading && user && !user.profileCompleted && pathname !== '/lengkapi-profil') {
+      navigate('/lengkapi-profil', { replace: true });
+    }
+  }, [loading, user, pathname, navigate]);
 
   return (
     <div className="app">
@@ -32,14 +44,35 @@ export default function App() {
             <span className="brand-sub">SMK NU Darussalam</span>
           </span>
         </Link>
-        <nav className="topnav">
-          {NAV.map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.end}>{n.label}</NavLink>
-          ))}
-          <NavLink to="/panduan">Panduan</NavLink>
-          <NavLink to="/jalur">Jalur N4</NavLink>
-          <NavLink to="/sumber">Sumber</NavLink>
-        </nav>
+        <div className="topbar-right">
+          <nav className="topnav">
+            {NAV.map((n) => (
+              <NavLink key={n.to} to={n.to} end={n.end}>{n.label}</NavLink>
+            ))}
+            <NavLink to="/panduan">Panduan</NavLink>
+            <NavLink to="/jalur">Jalur N4</NavLink>
+            <NavLink to="/sumber">Sumber</NavLink>
+          </nav>
+          {!loading && (
+            user ? (
+              <div className="user-chip">
+                <Link to="/lengkapi-profil" className="user-chip-link" title="Edit Profil">
+                  {user.avatarUrl ? (
+                    <img src={user.avatarUrl} alt={user.nickname} className="user-avatar" />
+                  ) : (
+                    <span className="user-avatar-fallback">{user.nickname.slice(0, 1).toUpperCase()}</span>
+                  )}
+                  <span>{user.nickname}</span>
+                </Link>
+                <button type="button" className="user-logout" onClick={() => void logout()} title="Keluar">
+                  Keluar
+                </button>
+              </div>
+            ) : (
+              <Link to="/masuk" className="btn small primary">Masuk</Link>
+            )
+          )}
+        </div>
       </header>
 
       <main>
@@ -52,6 +85,8 @@ export default function App() {
           <Route path="/panduan" element={<Guide />} />
           <Route path="/jalur" element={<Roadmap />} />
           <Route path="/sumber" element={<Resources />} />
+          <Route path="/masuk" element={<LoginPage />} />
+          <Route path="/lengkapi-profil" element={<CompleteProfilePage />} />
           <Route path="*" element={<div className="page narrow"><h1>Halaman tidak ditemukan</h1><Link to="/" className="btn primary">Kembali ke beranda</Link></div>} />
         </Routes>
       </main>

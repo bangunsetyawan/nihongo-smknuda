@@ -2,10 +2,12 @@ import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { allKana } from '../data/kana';
 import { VOCAB } from '../data/vocab';
+import { useAuth } from '../lib/auth';
 import { exportProgress, importProgress, level, mastery, resetProgress, setName, streak, useProgress } from '../lib/progress';
 
 export default function Home() {
   const prog = useProgress();
+  const { user, loading: authLoading } = useAuth();
   const hira = allKana('hiragana');
   const kata = allKana('katakana');
   const mh = hira.filter((k) => mastery(prog.kana[k.char]) === 3).length;
@@ -13,8 +15,9 @@ export default function Home() {
   const mv = VOCAB.filter((v) => prog.vocab?.[v.id]).length;
   const st = streak(prog.days);
   const lv = level(prog.xp);
-  const [editName, setEditName] = useState(!prog.name);
+  const [editName, setEditName] = useState(false);
   const [nameInput, setNameInput] = useState(prog.name ?? '');
+  const displayName = user?.nickname || prog.name;
 
   const nextStep = mh < hira.length * 0.6
     ? { to: '/hiragana', label: 'Lanjut belajar Hiragana', jp: 'あ' }
@@ -34,14 +37,14 @@ export default function Home() {
           </div>
           <div className="hero-kicker jp">ようこそ！</div>
           <h1>
-            {prog.name && !editName ? <>Halo, {prog.name}! 👋</> : <>Belajar Bahasa Jepang dari Nol</>}
+            {displayName && !editName ? <>Halo, {displayName}! 👋</> : <>Belajar Bahasa Jepang dari Nol</>}
           </h1>
           <p className="lead">
             Portal belajar resmi Ekstrakurikuler Bahasa Jepang (Japan Club) SMK NU Darussalam. Mulai dari huruf
             Hiragana &amp; Katakana, kosakata IRODORI, hingga persiapan ujian <strong>JLPT N4 / SSW</strong> untuk
             seluruh jurusan (TJKT, AKL, TKRO).
           </p>
-          {editName ? (
+          {editName && !user ? (
             <form className="row gap-s wrap" onSubmit={(e) => { e.preventDefault(); if (nameInput.trim()) { setName(nameInput.trim()); setEditName(false); } }}>
               <input className="input" placeholder="Nama panggilanmu…" value={nameInput} onChange={(e) => setNameInput(e.target.value)} maxLength={24} />
               <button className="btn primary" type="submit">Simpan</button>
@@ -50,7 +53,24 @@ export default function Home() {
             <div className="row gap-s wrap">
               <Link className="btn primary big" to={nextStep.to}><span className="jp">{nextStep.jp}</span> {nextStep.label} →</Link>
               <Link className="btn big" to="/kuis">🎯 Kuis cepat</Link>
+              {!authLoading && !user && (
+                <Link className="btn big" to="/masuk">🔐 Masuk / Daftar</Link>
+              )}
             </div>
+          )}
+          {!authLoading && (
+            user ? (
+              <p className="sync-note ok">
+                ✓ Progres tersinkron ke server · {user.kelas} {user.jurusan}
+                {user.japaneseName ? <> · <span className="jp">{user.japaneseName}</span></> : null}
+                {' · '}
+                <Link to="/lengkapi-profil">Edit profil</Link>
+              </p>
+            ) : (
+              <p className="sync-note muted">
+                Mode tamu: materi bebas diakses, namun <Link to="/masuk">masuk / daftar</Link> agar progres belajarmu tersimpan di server sekolah.
+              </p>
+            )
           )}
         </div>
         <div className="hero-art">

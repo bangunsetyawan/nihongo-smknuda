@@ -1,9 +1,29 @@
 services:
+  api:
+    build: ./server
+    image: nihongo-api:latest
+    container_name: nihongo-api
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      DB_PATH: "/data/nihongo.db"
+      JWT_SECRET: "${JWT_SECRET:-nihongo-smknuda-secret-ubah-di-env}"
+      APP_URL: "${APP_URL:-https://japan.smknuda.qzz.io}"
+      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-}"
+      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:-}"
+    volumes:
+      - nihongo_data:/data
+
   nihongo:
     build: .
     image: nihongo-smknuda:latest
     container_name: nihongo-smknuda
     restart: unless-stopped
+    depends_on:
+      - api
     # Dibuka di port 8432 sesuai route Cloudflare japan.smknuda.qzz.io, LAN sekolah, dan Tailscale
     ports:
       - "8432:80"
+
+volumes:
+  nihongo_data:
