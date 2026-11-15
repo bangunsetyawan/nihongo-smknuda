@@ -9,6 +9,7 @@ import Roadmap from './pages/Roadmap';
 import Resources from './pages/Resources';
 import LoginPage from './pages/LoginPage';
 import CompleteProfilePage from './pages/CompleteProfilePage';
+import { PrivacyPage, TermsPage } from './pages/LegalPage';
 import { initAuth, logout, useAuth } from './lib/auth';
 
 const NAV = [
@@ -87,6 +88,8 @@ export default function App() {
           <Route path="/sumber" element={<Resources />} />
           <Route path="/masuk" element={<LoginPage />} />
           <Route path="/lengkapi-profil" element={<CompleteProfilePage />} />
+          <Route path="/privasi" element={<PrivacyPage />} />
+          <Route path="/ketentuan" element={<TermsPage />} />
           <Route path="*" element={<div className="page narrow"><h1>Halaman tidak ditemukan</h1><Link to="/" className="btn primary">Kembali ke beranda</Link></div>} />
         </Routes>
       </main>
@@ -97,7 +100,7 @@ export default function App() {
           <strong>Nihongo SMKN NU Darussalam</strong>
           <span className="muted">· Srono, Banyuwangi</span>
         </div>
-        <div>Ekstrakurikuler Bahasa Jepang · <Link to="/panduan">Panduan</Link> · <Link to="/jalur">Jalur N4</Link> · <Link to="/sumber">Sumber belajar</Link> · <Link to="/sumber#kredit">Kredit</Link></div>
+        <div>Ekstrakurikuler Bahasa Jepang · <Link to="/panduan">Panduan</Link> · <Link to="/jalur">Jalur N4</Link> · <Link to="/sumber">Sumber belajar</Link> · <Link to="/privasi">Privasi</Link> · <Link to="/ketentuan">Ketentuan</Link></div>
         <div className="muted small">がんばって！ Semangat belajar!</div>
       </footer>
 
