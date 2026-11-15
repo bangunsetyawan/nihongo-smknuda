@@ -1,13 +1,15 @@
 import { useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { allKana } from '../data/kana';
 import { VOCAB } from '../data/vocab';
 import { useAuth } from '../lib/auth';
+import { convertToJapaneseName } from '../lib/japaneseName';
 import { exportProgress, importProgress, level, mastery, resetProgress, setName, streak, useProgress } from '../lib/progress';
 
 export default function Home() {
   const prog = useProgress();
   const { user, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const hira = allKana('hiragana');
   const kata = allKana('katakana');
   const mh = hira.filter((k) => mastery(prog.kana[k.char]) === 3).length;
@@ -15,99 +17,167 @@ export default function Home() {
   const mv = VOCAB.filter((v) => prog.vocab?.[v.id]).length;
   const st = streak(prog.days);
   const lv = level(prog.xp);
-  const [editName, setEditName] = useState(false);
+
   const [nameInput, setNameInput] = useState(prog.name ?? '');
-  const displayName = user?.nickname || prog.name;
+  const [editingGuestName, setEditingGuestName] = useState(false);
 
   const nextStep = mh < hira.length * 0.6
-    ? { to: '/hiragana', label: 'Lanjut belajar Hiragana', jp: 'あ' }
+    ? { to: '/hiragana', label: 'Lanjut belajar Hiragana', jp: 'あ', targetTitle: 'Target 1: Kuasai Hiragana', cur: mh, total: hira.length }
     : mk < kata.length * 0.6
-      ? { to: '/katakana', label: 'Lanjut belajar Katakana', jp: 'ア' }
+      ? { to: '/katakana', label: 'Lanjut belajar Katakana', jp: 'ア', targetTitle: 'Target 2: Kuasai Katakana', cur: mk, total: kata.length }
       : mv < VOCAB.length * 0.6
-        ? { to: '/kosakata', label: 'Lanjut belajar Kosakata', jp: '語' }
-        : { to: '/jalur', label: 'Lanjut ke materi IRODORI', jp: '本' };
+        ? { to: '/kosakata', label: 'Lanjut belajar Kosakata', jp: '語', targetTitle: 'Target 3: Hafal Kosakata IRODORI', cur: mv, total: VOCAB.length }
+        : { to: '/jalur', label: 'Lanjut ke materi IRODORI', jp: '本', targetTitle: 'Target 4: Persiapan JLPT N4 / SSW', cur: mv, total: VOCAB.length };
+
+  const activeName = (user?.nickname || nameInput || prog.name || '').trim();
+  const jpPreview = convertToJapaneseName(activeName);
+  const userJpName = user?.japaneseName || jpPreview.katakana;
+  const targetPct = Math.min(100, Math.round((nextStep.cur / nextStep.total) * 100));
 
   return (
     <div className="page">
-      <section className="hero">
-        <div className="hero-text">
-          <div className="hero-top-row">
-            <span className="hero-kicker jp">ようこそ！</span>
-            <div className="hero-kana-inline jp-hand" aria-hidden="true">
-              <span>あ</span><span>い</span><span>う</span>
+      {user ? (
+        <section className="hero dash-hero">
+          <div className="hero-text">
+            <div className="dash-user-meta">
+              <span className="dash-badge">{user.kelas} {user.jurusan}</span>
+              <span className="sync-note ok">✓ Progres tersinkron</span>
+              <Link to="/lengkapi-profil" className="dash-edit-link">Edit profil</Link>
             </div>
-          </div>
-          <h1>
-            {displayName && !editName
-              ? <>Halo, {displayName}! 👋</>
-              : <>Belajar Bahasa Jepang dengan Cepat</>}
-          </h1>
-          <p className="lead">
-            Aplikasi belajar resmi <strong>SMKN NU Darussalam</strong> — kuasai Hiragana, Katakana, dan kosakata IRODORI menuju <strong>JLPT N4 / SSW</strong>.
-          </p>
-
-          {editName && !user ? (
-            <form className="row gap-s wrap" onSubmit={(e) => { e.preventDefault(); if (nameInput.trim()) { setName(nameInput.trim()); setEditName(false); } }}>
-              <input className="input" placeholder="Nama panggilanmu…" value={nameInput} onChange={(e) => setNameInput(e.target.value)} maxLength={24} />
-              <button className="btn primary" type="submit">Simpan</button>
-            </form>
-          ) : !authLoading && !user ? (
-            <div className="hero-actions">
-              <div className="hero-btn-row">
-                <Link className="btn primary big" to="/masuk">Masuk</Link>
-                <Link className="btn big" to="/masuk?tab=register">Daftar Akun</Link>
+            <h1>Halo, {user.nickname}! 👋</h1>
+            {userJpName && (
+              <div className="jp-name-pill">
+                <span className="jp">{userJpName}</span>
+                {jpPreview.romaji && <span className="jp-name-latin">({jpPreview.romaji})</span>}
               </div>
-              <Link className="hero-guest-link" to={nextStep.to}>
-                Lanjut tanpa login →
-              </Link>
+            )}
+
+            <div className="dash-milestone">
+              <div className="row between gap-s">
+                <strong>{nextStep.targetTitle}</strong>
+                <span>{nextStep.cur}/{nextStep.total} ({targetPct}%)</span>
+              </div>
+              <div className="bar big"><div style={{ width: `${targetPct}%` }} /></div>
             </div>
-          ) : (
+
             <div className="hero-actions">
               <div className="hero-btn-row">
-                <Link className="btn primary big" to={nextStep.to}><span className="jp">{nextStep.jp}</span> {nextStep.label} →</Link>
+                <Link className="btn primary big" to={nextStep.to}>
+                  <span className="jp">{nextStep.jp}</span> {nextStep.label} →
+                </Link>
                 <Link className="btn big" to="/kuis">🎯 Kuis cepat</Link>
               </div>
-              {user && (
-                <p className="sync-note ok">
-                  ✓ Progres tersinkron · {user.kelas} {user.jurusan}
-                  {user.japaneseName ? <> · <span className="jp">{user.japaneseName}</span></> : null}
-                  {' · '}
-                  <Link to="/lengkapi-profil">Edit profil</Link>
-                </p>
-              )}
             </div>
-          )}
-        </div>
-        <div className="hero-art">
-          <div className="hero-kana jp-hand" aria-hidden="true">
-            <span>あ</span><span>い</span><span>う</span>
           </div>
-          <div className="hero-art-sub jp" aria-hidden="true">日本語を楽しく学ぼう</div>
-        </div>
-      </section>
 
-      <section className="stats">
-        <div className="card stat"><div className="stat-icon">🔥</div><div><div className="big-num">{st}</div><div className="muted small">hari berturut-turut</div></div></div>
+          <div className="hero-art">
+            <div className="hero-kana jp-hand" aria-hidden="true">
+              <span>あ</span><span>い</span><span>う</span>
+            </div>
+            <div className="hero-art-sub jp" aria-hidden="true">がんばろう！</div>
+          </div>
+        </section>
+      ) : (
+        <section className="hero">
+          <div className="hero-text">
+            <div className="hero-top-row">
+              <span className="hero-kicker jp">ようこそ！</span>
+              <div className="hero-kana-inline jp-hand" aria-hidden="true">
+                <span>あ</span><span>い</span><span>う</span>
+              </div>
+            </div>
+            <h1>
+              {prog.name && !editingGuestName
+                ? <>Halo, {prog.name}! 👋</>
+                : <>Belajar Bahasa Jepang dengan Cepat</>}
+            </h1>
+            <p className="lead">
+              Dari <strong>SMKN NU Darussalam</strong> untuk belajar Hiragana, Katakana, dan kosakata IRODORI menuju <strong>JLPT N4 / SSW</strong>.
+            </p>
+
+            <form
+              className="quick-name-box"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (nameInput.trim()) setName(nameInput.trim());
+                setEditingGuestName(false);
+                navigate(nextStep.to);
+              }}
+            >
+              <label className="quick-name-label" htmlFor="guest-name-input">
+                Akses cepat tanpa login — ketik nama panggilanmu:
+              </label>
+              <div className="quick-name-row">
+                <input
+                  id="guest-name-input"
+                  className="input"
+                  placeholder="Contoh: Bangun / Siti / Fauzi"
+                  maxLength={24}
+                  value={nameInput}
+                  onChange={(e) => {
+                    setNameInput(e.target.value);
+                    setEditingGuestName(true);
+                  }}
+                />
+                <button className="btn primary" type="submit">
+                  Mulai Belajar →
+                </button>
+              </div>
+              {jpPreview.katakana && (
+                <div className="jp-preview-row">
+                  <span>Nama Jepang kamu:</span>
+                  <strong className="jp">{jpPreview.katakana}</strong>
+                  <span className="jp-name-latin">({jpPreview.romaji})</span>
+                </div>
+              )}
+            </form>
+
+            {!authLoading && (
+              <div className="hero-auth-bar">
+                <span className="hero-auth-hint">Mau progres tersimpan permanen di server?</span>
+                <div className="hero-btn-row">
+                  <Link className="btn small" to="/masuk">Masuk (Email)</Link>
+                  <Link className="btn small" to="/masuk?tab=register">Daftar Akun</Link>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="hero-art">
+            <div className="hero-kana jp-hand" aria-hidden="true">
+              <span>あ</span><span>い</span><span>う</span>
+            </div>
+            <div className="hero-art-sub jp" aria-hidden="true">日本語を楽しく学ぼう</div>
+          </div>
+        </section>
+      )}
+
+      <section className="stats stats-5">
+        <div className="card stat"><div className="stat-icon">🔥</div><div><div className="big-num">{st}</div><div className="muted small">hari berturut</div></div></div>
         <div className="card stat">
           <div className="stat-icon">⭐</div>
           <div className="grow"><div className="big-num">Lv {lv.lv}</div><div className="bar"><div style={{ width: `${(lv.cur / lv.need) * 100}%` }} /></div><div className="muted small">{prog.xp} XP</div></div>
         </div>
         <Link to="/hiragana" className="card stat link-card">
           <div className="stat-icon jp">あ</div>
-          <div className="grow"><div className="big-num">{mh}<small className="muted">/{hira.length}</small></div><div className="bar"><div style={{ width: `${(mh / hira.length) * 100}%` }} /></div><div className="muted small">Hiragana hafal</div></div>
+          <div className="grow"><div className="big-num">{mh}<small className="muted">/{hira.length}</small></div><div className="bar"><div style={{ width: `${(mh / hira.length) * 100}%` }} /></div><div className="muted small">Hiragana</div></div>
         </Link>
         <Link to="/katakana" className="card stat link-card">
           <div className="stat-icon jp">ア</div>
-          <div className="grow"><div className="big-num">{mk}<small className="muted">/{kata.length}</small></div><div className="bar"><div style={{ width: `${(mk / kata.length) * 100}%` }} /></div><div className="muted small">Katakana hafal</div></div>
+          <div className="grow"><div className="big-num">{mk}<small className="muted">/{kata.length}</small></div><div className="bar"><div style={{ width: `${(mk / kata.length) * 100}%` }} /></div><div className="muted small">Katakana</div></div>
+        </Link>
+        <Link to="/kosakata" className="card stat link-card">
+          <div className="stat-icon jp">語</div>
+          <div className="grow"><div className="big-num">{mv}<small className="muted">/{VOCAB.length}</small></div><div className="bar"><div style={{ width: `${(mv / VOCAB.length) * 100}%` }} /></div><div className="muted small">Kosakata</div></div>
         </Link>
       </section>
 
       <h2>Mulai dari mana?</h2>
       <section className="steps">
-        <Step n={1} title="Hiragana" jp="ひらがな" to="/hiragana" desc="46 huruf dasar + variasinya. Target: 1–2 minggu." />
-        <Step n={2} title="Katakana" jp="カタカナ" to="/katakana" desc="Huruf untuk kata serapan. Target: 1–2 minggu." />
+        <Step n={1} title="Hiragana" jp="ひらがな" to="/hiragana" desc="46 huruf dasar + variasinya. Target: 1–2 minggu." done={mh >= hira.length * 0.6} />
+        <Step n={2} title="Katakana" jp="カタカナ" to="/katakana" desc="Huruf untuk kata serapan. Target: 1–2 minggu." done={mk >= kata.length * 0.6} />
         <Step n={3} title="Aturan baca" jp="ルール" to="/panduan" desc="Huruf kecil っ ゃ, vokal panjang, partikel は へ を." />
-        <Step n={4} title="Kosakata IRODORI" jp="ことば" to="/kosakata" desc="Salam, kata kerja N5, istilah SMK & budaya kerja 5S." />
+        <Step n={4} title="Kosakata IRODORI" jp="ことば" to="/kosakata" desc="Salam, kata kerja N5, istilah SMK & budaya kerja 5S." done={mv >= VOCAB.length * 0.6} />
         <Step n={5} title="Jalur ke N4" jp="N4" to="/jalur" desc="Lanjut dengan buku gratis IRODORI (ada versi Indonesia)." />
       </section>
 
@@ -121,15 +191,18 @@ export default function Home() {
         </ul>
       </section>
 
-      <BackupCard onEditName={() => setEditName(true)} />
+      <BackupCard onEditName={() => {
+        if (user) navigate('/lengkapi-profil');
+        else setEditingGuestName(true);
+      }} />
     </div>
   );
 }
 
-function Step({ n, title, jp, desc, to }: { n: number; title: string; jp: string; desc: string; to: string }) {
+function Step({ n, title, jp, desc, to, done }: { n: number; title: string; jp: string; desc: string; to: string; done?: boolean }) {
   return (
     <Link to={to} className="card step">
-      <div className="step-n">{n}</div>
+      <div className={`step-n ${done ? 'done' : ''}`}>{done ? '✓' : n}</div>
       <div>
         <h3>{title} <span className="jp muted">{jp}</span></h3>
         <p className="muted">{desc}</p>
@@ -150,10 +223,9 @@ function BackupCard({ onEditName }: { onEditName: () => void }) {
   };
   return (
     <details className="card backup">
-      <summary>⚙️ Pengaturan & cadangan progres</summary>
+      <summary>⚙️ Pengaturan &amp; cadangan progres</summary>
       <p className="muted small">
-        Progres tersimpan di browser perangkat ini (tanpa akun). Jika ganti HP atau menghapus data browser,
-        simpan cadangan dulu lalu pulihkan di perangkat baru.
+        Jika belum masuk akun, progres tersimpan di browser perangkat ini. Kamu juga bisa mengunduh atau memulihkan cadangan JSON kapan saja.
       </p>
       <div className="row gap-s wrap">
         <button className="btn small" onClick={onEditName}>✏️ Ganti nama</button>

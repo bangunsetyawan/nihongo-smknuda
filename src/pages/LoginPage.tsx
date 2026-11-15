@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { loginManual, registerManual, useAuth } from '../lib/auth';
+import { convertToJapaneseName } from '../lib/japaneseName';
+import { useProgress } from '../lib/progress';
 
 const JURUSAN_LIST = ['TJKT', 'AKL', 'TKRO', 'Lainnya'];
 const KELAS_LIST = ['X', 'XI', 'XII', 'Alumni / Pembina'];
@@ -15,6 +17,7 @@ const ERROR_MSG: Record<string, string> = {
 
 export default function LoginPage() {
   const { user, googleEnabled } = useAuth();
+  const prog = useProgress();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const [mode, setMode] = useState<'login' | 'register'>(() =>
@@ -29,10 +32,13 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [nickname, setNickname] = useState('');
+  const [nickname, setNickname] = useState(prog.name ?? '');
   const [kelas, setKelas] = useState('X');
   const [jurusan, setJurusan] = useState('TJKT');
-  const [japaneseName, setJapaneseName] = useState('');
+  const [japaneseName, setJapaneseName] = useState(() =>
+    prog.name ? convertToJapaneseName(prog.name).katakana : ''
+  );
+  const [jpTouched, setJpTouched] = useState(false);
 
   if (user) {
     return (
@@ -176,18 +182,22 @@ export default function LoginPage() {
                     placeholder="Contoh: Fauzi"
                     maxLength={24}
                     value={nickname}
-                    onChange={(e) => setNickname(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setNickname(val);
+                      if (!jpTouched) setJapaneseName(convertToJapaneseName(val).katakana);
+                    }}
                   />
                 </label>
 
                 <label className="field">
-                  <span>Nama Jepang (opsional)</span>
+                  <span>Nama Jepang (otomatis)</span>
                   <input
                     className="input jp"
                     placeholder="Contoh: ファウジ"
                     maxLength={32}
                     value={japaneseName}
-                    onChange={(e) => setJapaneseName(e.target.value)}
+                    onChange={(e) => { setJpTouched(true); setJapaneseName(e.target.value); }}
                   />
                 </label>
               </div>
