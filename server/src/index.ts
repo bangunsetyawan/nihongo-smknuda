@@ -26,6 +26,7 @@ import { isKanaAnswerCorrect, KANA_MAP } from './data/kana-romaji.js';
 import { isKanjiAnswerCorrect, KANJI_MAP } from './data/kanji.js';
 import { KAIWA_IDS } from './data/kaiwa-ids.js';
 import { VOCAB_IDS } from './data/vocab-ids.js';
+import { computeServerBadges } from './badges.js';
 
 const execFileAsync = promisify(execFile);
 const TTS_CACHE_DIR = process.env.TTS_CACHE_DIR || '/data/tts-cache';
@@ -152,6 +153,8 @@ interface ProgressPayload {
   xp?: number;
   days?: string[];
   quizzes?: number;
+  perfectQuizzes?: number;
+  srsReviews?: number;
   name?: string;
 }
 
@@ -250,10 +253,10 @@ function getOrCreateProgress(userId: number): ProgressPayload {
       }
       return parsed;
     } catch {
-      return { kana: {}, vocab: {}, vocabSrs: {}, kanji: {}, bunpou: {}, kaiwa: [], xp: 0, days: [], quizzes: 0 };
+      return { kana: {}, vocab: {}, vocabSrs: {}, kanji: {}, bunpou: {}, kaiwa: [], xp: 0, days: [], quizzes: 0, perfectQuizzes: 0, srsReviews: 0 };
     }
   }
-  const empty: ProgressPayload = { kana: {}, vocab: {}, vocabSrs: {}, kanji: {}, bunpou: {}, kaiwa: [], xp: 0, days: [], quizzes: 0 };
+  const empty: ProgressPayload = { kana: {}, vocab: {}, vocabSrs: {}, kanji: {}, bunpou: {}, kaiwa: [], xp: 0, days: [], quizzes: 0, perfectQuizzes: 0, srsReviews: 0 };
   db.prepare('INSERT INTO user_progress (user_id, data_json) VALUES (?, ?)').run(userId, JSON.stringify(empty));
   return empty;
 }
@@ -599,7 +602,15 @@ app.put('/api/profile', requireAuth, (req: AuthRequest, res) => {
 
 app.get('/api/progress', requireAuth, (req: AuthRequest, res) => {
   const progress = getOrCreateProgress(req.user!.id);
-  res.json({ progress });
+  const badges = computeServerBadges(progress);
+  res.json({ progress, badges });
+});
+
+app.get('/api/badges', requireAuth, (req: AuthRequest, res) => {
+  const progress = getOrCreateProgress(req.user!.id);
+  const badges = computeServerBadges(progress);
+  const unlockedCount = badges.filter((b) => b.unlocked).length;
+  res.json({ badges, unlockedCount, totalCount: badges.length });
 });
 
 function saveProgressRow(userId: number, data: ProgressPayload) {
@@ -711,6 +722,11 @@ function validateRestoreSnapshot(raw: unknown): { ok: true; data: ProgressPayloa
     return { ok: false, error: 'Jumlah kuis harus bilangan bulat 0–100000.' };
   }
 
+  const perfectQuizzes = obj.perfectQuizzes === undefined ? 0 : Number(obj.perfectQuizzes);
+  const srsReviews = obj.srsReviews === undefined ? 0 : Number(obj.srsReviews);
+  const safePerfect = Number.isInteger(perfectQuizzes) && perfectQuizzes >= 0 && perfectQuizzes <= 100000 ? perfectQuizzes : 0;
+  const safeSrs = Number.isInteger(srsReviews) && srsReviews >= 0 && srsReviews <= 100000 ? srsReviews : 0;
+
   let cleanDays: string[] = [];
   if (obj.days !== undefined) {
     if (!Array.isArray(obj.days) || obj.days.length > 365 || !obj.days.every(isValidIsoDate)) {
@@ -727,6 +743,8 @@ function validateRestoreSnapshot(raw: unknown): { ok: true; data: ProgressPayloa
     xp,
     days: cleanDays,
     quizzes,
+    perfectQuizzes: safePerfect,
+    srsReviews: safeSrs,
     ...(name ? { name } : {}),
   };
   normalizeSrs(result);
@@ -757,11 +775,13 @@ app.put('/api/progress', requireAuth, (req: AuthRequest, res) => {
     xp: current.xp ?? 0,
     days: Array.isArray(current.days) ? current.days : [],
     quizzes: current.quizzes ?? 0,
+    perfectQuizzes: current.perfectQuizzes ?? 0,
+    srsReviews: current.srsReviews ?? 0,
     name: typeof payload.name === 'string' ? payload.name.slice(0, 32) : current.name,
   };
 
   const sum = saveProgressRow(req.user!.id, clean);
-  res.json({ ok: true, progress: clean, summary: sum });
+  res.json({ ok: true, progress: clean, summary: sum, badges: computeServerBadges(clean) });
 });
 
 app.delete('/api/progress', requireAuth, (req: AuthRequest, res) => {
@@ -778,10 +798,12 @@ app.delete('/api/progress', requireAuth, (req: AuthRequest, res) => {
     xp: 0,
     days: [],
     quizzes: 0,
+    perfectQuizzes: 0,
+    srsReviews: 0,
     ...(current.name ? { name: current.name } : {}),
   };
   const sum = saveProgressRow(req.user!.id, reset);
-  res.json({ ok: true, progress: reset, summary: sum });
+  res.json({ ok: true, progress: reset, summary: sum, badges: computeServerBadges(reset) });
 });
 
 app.post('/api/progress/restore', requireAuth, (req: AuthRequest, res) => {
@@ -791,7 +813,7 @@ app.post('/api/progress/restore', requireAuth, (req: AuthRequest, res) => {
     return;
   }
   const sum = saveProgressRow(req.user!.id, checked.data);
-  res.json({ ok: true, progress: checked.data, summary: sum });
+  res.json({ ok: true, progress: checked.data, summary: sum, badges: computeServerBadges(checked.data) });
 });
 
 const practiceRateLimit = rateLimit('practice', 120, 60 * 1000, true);
@@ -812,6 +834,8 @@ app.post('/api/practice/record', requireAuth, practiceRateLimit, (req: AuthReque
     xp: typeof current.xp === 'number' ? current.xp : 0,
     days: Array.isArray(current.days) ? [...current.days] : [],
     quizzes: typeof current.quizzes === 'number' ? current.quizzes : 0,
+    perfectQuizzes: typeof current.perfectQuizzes === 'number' ? current.perfectQuizzes : 0,
+    srsReviews: typeof current.srsReviews === 'number' ? current.srsReviews : 0,
     name: current.name,
   };
   const now = Date.now();
@@ -831,6 +855,9 @@ app.post('/api/practice/record', requireAuth, practiceRateLimit, (req: AuthReque
     // Abaikan flag correct dari browser; verifikasi penuh di server terhadap peta kana.
     const correct = isKanaAnswerCorrect(ch, body.given, body.mode);
     const prev = next.kana![ch] ?? { c: 0, w: 0, s: 0, t: 0 };
+    if ((prev.t ?? 0) > 0 && typeof prev.r === 'number' && prev.r <= now) {
+      next.srsReviews = (next.srsReviews ?? 0) + 1;
+    }
     if (correct) {
       const nextInterval = (prev.i || 1) * 2;
       next.kana![ch] = {
@@ -862,6 +889,9 @@ app.post('/api/practice/record', requireAuth, practiceRateLimit, (req: AuthReque
     // Abaikan flag correct dari browser; verifikasi penuh di server terhadap peta kanji.
     const correct = isKanjiAnswerCorrect(ch, body.given, body.mode);
     const prev = next.kanji![ch] ?? { c: 0, w: 0, s: 0, t: 0, i: 1, r: 0 };
+    if ((prev.t ?? 0) > 0 && typeof prev.r === 'number' && prev.r <= now) {
+      next.srsReviews = (next.srsReviews ?? 0) + 1;
+    }
     if (correct) {
       const nextInterval = (prev.i || 1) * 2;
       next.kanji![ch] = {
@@ -981,6 +1011,12 @@ app.post('/api/practice/record', requireAuth, practiceRateLimit, (req: AuthReque
     }
     const bonusXp = correctCount === answersRaw.length ? 50 : 10;
     next.quizzes = (next.quizzes ?? 0) + 1;
+    if (correctCount === answersRaw.length) {
+      next.perfectQuizzes = (next.perfectQuizzes ?? 0) + 1;
+    }
+    if (body.isReview === true && answersRaw.length > 0) {
+      next.srsReviews = Math.max(next.srsReviews ?? 0, (current.srsReviews ?? 0) + 1);
+    }
     next.xp = (next.xp ?? 0) + bonusXp;
     ensureToday();
   } else if (type === 'vocab_toggle' || type === 'vocab_mark') {
@@ -990,6 +1026,10 @@ app.post('/api/practice/record', requireAuth, practiceRateLimit, (req: AuthReque
       return;
     }
     const hadKey = id in next.vocab!;
+    const prevSrs = next.vocabSrs![id];
+    if (prevSrs && typeof prevSrs.r === 'number' && prevSrs.r <= now) {
+      next.srsReviews = (next.srsReviews ?? 0) + 1;
+    }
     const nextVal = type === 'vocab_toggle' ? !next.vocab![id] : Boolean(body.known);
     const firstTime = nextVal && !hadKey;
     next.vocab![id] = nextVal;
@@ -1021,7 +1061,7 @@ app.post('/api/practice/record', requireAuth, practiceRateLimit, (req: AuthReque
   }
 
   const sum = saveProgressRow(req.user!.id, next);
-  res.json({ ok: true, progress: next, summary: sum });
+  res.json({ ok: true, progress: next, summary: sum, badges: computeServerBadges(next) });
 });
 
 app.post('/api/profile/password', requireAuth, async (req: AuthRequest, res) => {

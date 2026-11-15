@@ -38,13 +38,15 @@ export interface Progress {
   xp: number;
   days: string[]; // tanggal belajar (YYYY-MM-DD)
   quizzes: number;
+  perfectQuizzes?: number;
+  srsReviews?: number;
   name?: string;
 }
 
 export type SyncStatus = 'synced' | 'syncing' | 'pending' | 'offline';
 
 const KEY = 'nihongo-smk:v1';
-const empty: Progress = { kana: {}, vocab: {}, vocabSrs: {}, vocabStats: {}, kanji: {}, bunpou: {}, bunpouQuestions: {}, kaiwa: [], xp: 0, days: [], quizzes: 0 };
+const empty: Progress = { kana: {}, vocab: {}, vocabSrs: {}, vocabStats: {}, kanji: {}, bunpou: {}, bunpouQuestions: {}, kaiwa: [], xp: 0, days: [], quizzes: 0, perfectQuizzes: 0, srsReviews: 0 };
 
 let state: Progress = load();
 const subs = new Set<() => void>();
@@ -205,10 +207,12 @@ export function mergeServerProgress(serverProg?: Partial<Progress> | null) {
     bunpou: { ...(local.bunpou ?? {}), ...(srv.bunpou ?? {}) },
     bunpouQuestions: { ...(local.bunpouQuestions ?? {}), ...(srv.bunpouQuestions ?? {}) },
     kaiwa: Array.isArray(srv.kaiwa) ? srv.kaiwa : (local.kaiwa ?? []),
-    // XP, hari aktif, dan jumlah kuis mengikuti angka resmi server saat login.
+    // XP, hari aktif, kuis, dan review SRS mengikuti angka resmi server saat login.
     xp: typeof srv.xp === 'number' ? srv.xp : 0,
     days: Array.isArray(srv.days) ? srv.days : [],
     quizzes: typeof srv.quizzes === 'number' ? srv.quizzes : 0,
+    perfectQuizzes: typeof srv.perfectQuizzes === 'number' ? srv.perfectQuizzes : 0,
+    srsReviews: typeof srv.srsReviews === 'number' ? srv.srsReviews : 0,
     name: local.name || srv.name,
   };
   state = merged;
@@ -273,24 +277,32 @@ export function recordAnswer(char: string, given: string, mode: string, localCor
   const stat: KanaStat = localCorrect
     ? { c: prev.c + 1, w: prev.w, s: prev.s + 1, t: now, i: nextI, r: now + nextI * DAY_MS }
     : { c: prev.c, w: prev.w + 1, s: 0, t: now, i: 1, r: now + DAY_MS };
+  const wasDue = prev.t > 0 && typeof prev.r === 'number' && prev.r <= now;
   const d = today();
   saveLocalOnly({
     ...state,
     kana: { ...state.kana, [char]: stat },
     xp: state.xp + (localCorrect ? 10 : 1),
     days: state.days.includes(d) ? state.days : [...state.days, d],
+    srsReviews: (state.srsReviews ?? 0) + (wasDue ? 1 : 0),
   });
   void recordPracticeOnServer({ type: 'kana_answer', char, given, mode });
 }
 
 export type QuizFinishPayload =
-  | { quizType?: 'kana'; answers: Array<{ char: string; given: string; mode?: string }> }
-  | { quizType: 'vocab'; answers: Array<{ id: string; givenId: string }> }
-  | { quizType: 'mixed'; answers: Array<{ kind: 'kana'; char: string; given: string; mode?: string } | { kind: 'vocab'; id: string; givenId: string }> }
-  | { quizType: 'kanji'; answers: Array<{ char: string; given: string; mode: string }> };
+  | { quizType?: 'kana'; isReview?: boolean; answers: Array<{ char: string; given: string; mode?: string }> }
+  | { quizType: 'vocab'; isReview?: boolean; answers: Array<{ id: string; givenId: string }> }
+  | { quizType: 'mixed'; isReview?: boolean; answers: Array<{ kind: 'kana'; char: string; given: string; mode?: string } | { kind: 'vocab'; id: string; givenId: string }> }
+  | { quizType: 'kanji'; isReview?: boolean; answers: Array<{ char: string; given: string; mode: string }> };
 
 export function finishQuiz(localBonusXp: number, payload: QuizFinishPayload) {
-  saveLocalOnly({ ...state, quizzes: state.quizzes + 1, xp: state.xp + localBonusXp });
+  saveLocalOnly({
+    ...state,
+    quizzes: state.quizzes + 1,
+    perfectQuizzes: (state.perfectQuizzes ?? 0) + (localBonusXp >= 50 ? 1 : 0),
+    srsReviews: (state.srsReviews ?? 0) + (payload.isReview && payload.answers.length > 0 ? 1 : 0),
+    xp: state.xp + localBonusXp,
+  });
   void recordPracticeOnServer({ type: 'quiz_finish', ...payload });
 }
 
@@ -337,12 +349,14 @@ export function recordKanjiAnswer(char: string, given: string, mode: string, loc
   const stat: KanjiStat = localCorrect
     ? { c: prev.c + 1, w: prev.w, s: prev.s + 1, t: now, i: nextI, r: now + nextI * DAY_MS }
     : { c: prev.c, w: prev.w + 1, s: 0, t: now, i: 1, r: now + DAY_MS };
+  const wasDue = prev.t > 0 && typeof prev.r === 'number' && prev.r <= now;
   const d = today();
   saveLocalOnly({
     ...state,
     kanji: { ...prevMap, [char]: stat },
     xp: state.xp + (localCorrect ? 10 : 1),
     days: state.days.includes(d) ? state.days : [...state.days, d],
+    srsReviews: (state.srsReviews ?? 0) + (wasDue ? 1 : 0),
   });
   void recordPracticeOnServer({ type: 'kanji_answer', char, given, mode });
 }

@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import InstallAppBanner from '../components/InstallAppBanner';
+import { BADGES, computeClientBadges, type BadgeStatus } from '../data/badges';
 import { allKana } from '../data/kana';
 import { KANJI_LIST } from '../data/kanji';
 import { VOCAB } from '../data/vocab';
@@ -39,10 +41,12 @@ export default function Home() {
   const [nameInput, setNameInput] = useState(prog.name ?? '');
   const [editingGuestName, setEditingGuestName] = useState(false);
   const [tasks, setTasks] = useState<StudentTask[]>([]);
+  const [serverBadges, setServerBadges] = useState<BadgeStatus[] | null>(null);
 
   useEffect(() => {
     if (!user) {
       setTasks([]);
+      setServerBadges(null);
       return;
     }
     let active = true;
@@ -52,8 +56,28 @@ export default function Home() {
         if (active && data?.tasks) setTasks(data.tasks);
       })
       .catch(() => {});
+    fetch('/api/badges', { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { badges?: BadgeStatus[] } | null) => {
+        if (active && Array.isArray(data?.badges)) setServerBadges(data.badges);
+      })
+      .catch(() => {});
     return () => { active = false; };
-  }, [user, prog.xp, prog.quizzes, mh, mk, mv]);
+  }, [user, prog.xp, prog.quizzes, prog.perfectQuizzes, prog.srsReviews, mh, mk, mv]);
+
+  const badgeStatuses = useMemo(
+    () => serverBadges ?? computeClientBadges(prog),
+    [serverBadges, prog],
+  );
+  const badgeStatusMap = useMemo(
+    () => new Map(badgeStatuses.map((b) => [b.id, b])),
+    [badgeStatuses],
+  );
+  const unlockedBadges = BADGES.filter((b) => badgeStatusMap.get(b.id)?.unlocked);
+  const previewBadges = [
+    ...unlockedBadges.slice(0, 4),
+    ...BADGES.filter((b) => !badgeStatusMap.get(b.id)?.unlocked).slice(0, Math.max(2, 6 - unlockedBadges.slice(0, 4).length)),
+  ].slice(0, 6);
 
   const nextStep = mh < hira.length * 0.6
     ? { to: '/hiragana', label: 'Lanjut belajar Hiragana', jp: 'あ', targetTitle: 'Target 1: Kuasai Hiragana', cur: mh, total: hira.length }
@@ -284,6 +308,37 @@ export default function Home() {
         })()}
       </section>
 
+      <section className="card badges-home-card" style={{ marginTop: '.85rem' }}>
+        <div className="row between wrap gap-s">
+          <div>
+            <div className="srs-kicker">🏆 Pencapaian ({unlockedBadges.length}/{BADGES.length})</div>
+            <p className="muted small" style={{ margin: '.2rem 0 0' }}>
+              Kumpulkan lencana pemula dengan rutin latihan harian, hafal huruf, dan selesaikan kuis.
+            </p>
+          </div>
+          <Link to="/pencapaian" className="btn small">Lihat semua →</Link>
+        </div>
+        <div className="badge-mini-row">
+          {previewBadges.map((b) => {
+            const st = badgeStatusMap.get(b.id);
+            const ok = Boolean(st?.unlocked);
+            return (
+              <Link
+                key={b.id}
+                to="/pencapaian"
+                className={`badge-mini-chip ${ok ? 'earned' : 'locked'}`}
+                title={`${b.title}: ${b.desc}`}
+              >
+                <span>{b.icon}</span>
+                <span>{b.title}</span>
+              </Link>
+            );
+          })}
+        </div>
+      </section>
+
+      <InstallAppBanner />
+
       <h2>Fitur &amp; Pemantauan</h2>
       <section className="steps">
         <Link to="/kanji" className="card step">
@@ -319,6 +374,13 @@ export default function Home() {
           <div>
             <h3>Papan Peringkat <span className="jp muted">ランキング</span></h3>
             <p className="muted">Lihat peringkat XP, streak, dan progres teman-teman.</p>
+          </div>
+        </Link>
+        <Link to="/pencapaian" className="card step">
+          <div className="step-n">🏅</div>
+          <div>
+            <h3>Lencana Pencapaian <span className="jp muted">バッジ</span></h3>
+            <p className="muted">{unlockedBadges.length} dari {BADGES.length} lencana pemula terbuka.</p>
           </div>
         </Link>
         {(user?.role === 'teacher' || user?.role === 'owner') && (

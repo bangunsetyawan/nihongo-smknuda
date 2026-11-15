@@ -767,3 +767,149 @@ main { flex: 1; }
   border: 1px solid var(--line);
   border-radius: 12px;
 }
+
+.vocab-example {
+  margin-top: .5rem;
+  padding-top: .45rem;
+  border-top: 1px dashed var(--line);
+  font-size: .88rem;
+}
+.vocab-ex-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .35rem;
+  font-weight: 600;
+}
+.vocab-ex-tr {
+  color: var(--muted);
+  font-size: .8rem;
+  margin-top: .15rem;
+  line-height: 1.35;
+}
+.fc-example {
+  width: 100%;
+  text-align: center;
+  margin-top: .25rem;
+}
+.btn.tiny {
+  padding: .2rem .45rem;
+  font-size: .78rem;
+  min-width: 28px;
+}
+
+.badge-mini-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+  margin-top: .7rem;
+}
+.badge-mini-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .3rem .65rem;
+  border-radius: 999px;
+  font-size: .83rem;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  background: #fbf7f2;
+  color: var(--ink);
+  text-decoration: none;
+}
+.badge-mini-chip.earned {
+  background: #fff4e6;
+  border-color: #f3b86b;
+}
+.badge-mini-chip.locked {
+  opacity: .58;
+  filter: grayscale(.5);
+}
+
+.badge-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: .8rem;
+}
+.badge-card {
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+  transition: transform .15s, border-color .15s;
+}
+.badge-card.earned {
+  border-color: #e9a853;
+  background: linear-gradient(180deg, #fffdf9, #fff6ea);
+}
+.badge-card.locked {
+  opacity: .7;
+  background: #faf7f3;
+}
+.badge-card.locked .badge-icon {
+  filter: grayscale(.85);
+}
+.badge-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+}
+.badge-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 1.4rem;
+  background: #fff;
+  border: 1px solid var(--line);
+}
+.badge-pill {
+  font-size: .74rem;
+  font-weight: 700;
+  padding: .18rem .5rem;
+  border-radius: 999px;
+  background: #eee7df;
+  color: var(--muted);
+}
+.badge-pill.ok {
+  background: #dcfce7;
+  color: #166534;
+}
+.badge-title {
+  font-weight: 800;
+  font-size: 1rem;
+}
+.badge-prog {
+  margin-top: auto;
+  padding-top: .35rem;
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+}
+.badge-prog .bar {
+  flex: 1;
+}
+
+.install-card {
+  margin-top: .85rem;
+  border-color: #d6c8f5;
+  background: linear-gradient(135deg, #fbf9ff, #fff);
+}
+.install-guide-box {
+  margin-top: .65rem;
+  padding: .6rem .8rem;
+  border-radius: 10px;
+  background: #f5f2ec;
+  border: 1px solid var(--line);
+  line-height: 1.45;
+}
+.install-compact-wrap {
+  margin-top: .75rem;
+}
+.install-guide-text {
+  margin: .45rem 0 0;
+  padding: .45rem .65rem;
+  background: #f5f2ec;
+  border-radius: 8px;
+}

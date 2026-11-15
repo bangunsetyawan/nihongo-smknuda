@@ -197,6 +197,7 @@ export default function Quiz() {
       if (hasKana && !hasVocab) {
         finishQuiz(bonus, {
           quizType: 'kana',
+          isReview: reviewMode,
           answers: answers.map((a) => a.kind === 'kana'
             ? { char: a.kana.char, given: a.given, mode: a.mode }
             : { char: '', given: '', mode: 'pilih-romaji' }),
@@ -204,6 +205,7 @@ export default function Quiz() {
       } else if (hasVocab && !hasKana) {
         finishQuiz(bonus, {
           quizType: 'vocab',
+          isReview: reviewMode,
           answers: answers.map((a) => a.kind === 'vocab'
             ? { id: a.vocab.id, givenId: a.givenId }
             : { id: '', givenId: '' }),
@@ -211,6 +213,7 @@ export default function Quiz() {
       } else {
         finishQuiz(bonus, {
           quizType: 'mixed',
+          isReview: reviewMode,
           answers: answers.map((a) => a.kind === 'vocab'
             ? { kind: 'vocab', id: a.vocab.id, givenId: a.givenId }
             : { kind: 'kana', char: a.kana.char, given: a.given, mode: a.mode }),

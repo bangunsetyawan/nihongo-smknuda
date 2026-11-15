@@ -16,6 +16,8 @@ import TeacherPage from './pages/TeacherPage';
 import KanjiPage from './pages/KanjiPage';
 import BunpouPage from './pages/BunpouPage';
 import KaiwaPage from './pages/KaiwaPage';
+import BadgesPage from './pages/BadgesPage';
+import InstallAppBanner from './components/InstallAppBanner';
 import { initAuth, logout, useAuth } from './lib/auth';
 
 const NAV = [
@@ -99,6 +101,7 @@ export default function App() {
           <Route path="/lengkapi-profil" element={<CompleteProfilePage />} />
           <Route path="/suara" element={<TtsPage />} />
           <Route path="/peringkat" element={<LeaderboardPage />} />
+          <Route path="/pencapaian" element={<BadgesPage />} />
           <Route path="/rekap" element={<TeacherPage />} />
           <Route path="/privasi" element={<PrivacyPage />} />
           <Route path="/ketentuan" element={<TermsPage />} />
@@ -112,7 +115,7 @@ export default function App() {
           <strong>Nihongo SMKN NU Darussalam</strong>
           <span className="muted">· Srono, Banyuwangi</span>
         </div>
-        <div>Ekstrakurikuler Bahasa Jepang · <Link to="/panduan">Panduan</Link> · <Link to="/jalur">Jalur N4</Link> · <Link to="/sumber">Sumber belajar</Link> · <Link to="/privasi">Privasi</Link> · <Link to="/ketentuan">Ketentuan</Link></div>
+        <div>Ekstrakurikuler Bahasa Jepang · <Link to="/pencapaian">Pencapaian</Link> · <Link to="/panduan">Panduan</Link> · <Link to="/jalur">Jalur N4</Link> · <Link to="/sumber">Sumber belajar</Link> · <Link to="/privasi">Privasi</Link> · <Link to="/ketentuan">Ketentuan</Link></div>
         <div className="muted small">がんばって！ Semangat belajar!</div>
       </footer>
 
@@ -129,6 +132,7 @@ export default function App() {
               <NavLink to="/kaiwa" className="mobile-sheet-item">💬 Kaiwa &amp; Shadowing</NavLink>
               <NavLink to="/suara" className="mobile-sheet-item">🔊 Suara &amp; Terjemah</NavLink>
               <NavLink to="/peringkat" className="mobile-sheet-item">🏆 Peringkat</NavLink>
+              <NavLink to="/pencapaian" className="mobile-sheet-item">🏅 Pencapaian</NavLink>
               <NavLink to="/panduan" className="mobile-sheet-item">📖 Panduan</NavLink>
               <NavLink to="/jalur" className="mobile-sheet-item">🗺️ Jalur N4</NavLink>
               <NavLink to="/sumber" className="mobile-sheet-item">📚 Sumber Belajar</NavLink>
@@ -141,6 +145,7 @@ export default function App() {
                 <NavLink to="/masuk" className="mobile-sheet-item">🔑 Masuk / Daftar</NavLink>
               )}
             </div>
+            <InstallAppBanner compact />
           </div>
         </div>
       )}
@@ -154,7 +159,7 @@ export default function App() {
         ))}
         <button
           type="button"
-          className={`bottomnav-btn ${moreOpen || ['/kanji', '/bunpou', '/kaiwa', '/suara', '/peringkat', '/panduan', '/jalur', '/sumber', '/rekap', '/lengkapi-profil', '/masuk'].includes(pathname) ? 'active' : ''}`}
+          className={`bottomnav-btn ${moreOpen || ['/kanji', '/bunpou', '/kaiwa', '/suara', '/peringkat', '/pencapaian', '/panduan', '/jalur', '/sumber', '/rekap', '/lengkapi-profil', '/masuk'].includes(pathname) ? 'active' : ''}`}
           onClick={() => setMoreOpen((v) => !v)}
         >
           <span className="bn-icon">☰</span>

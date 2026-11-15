@@ -126,6 +126,17 @@ function VocabList({ items, vocabProg }: { items: VocabItem[]; vocabProg: Record
                 <div className={`vocab-hint ${hideHint ? 'blurred' : ''}`}>
                   <div className="vocab-romaji">{v.romaji}</div>
                   <div className="vocab-arti">{v.arti}</div>
+                  {v.example && (
+                    <div className="vocab-example">
+                      <div className="vocab-ex-row">
+                        <span className="jp">{v.example.jp}</span>
+                        <SpeakButton text={v.example.jp} label="" className="tiny" />
+                      </div>
+                      <div className="vocab-ex-tr">
+                        {v.example.romaji} — {v.example.arti}
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="vocab-foot">
                   <button
@@ -203,6 +214,14 @@ function FlashcardView({ items, vocabProg }: { items: VocabItem[]; vocabProg: Re
             {card.kanji && <div className="fc-kanji jp">{card.kanji}</div>}
             <div className="fc-romaji">{card.romaji}</div>
             <div className="fc-arti">{card.arti}</div>
+            {card.example && (
+              <div className="vocab-example fc-example">
+                <div className="jp">{card.example.jp}</div>
+                <div className="vocab-ex-tr">
+                  {card.example.romaji} — {card.example.arti}
+                </div>
+              </div>
+            )}
             <SpeakButton text={card.jp} label="Dengarkan" className="small" />
           </div>
         )}
