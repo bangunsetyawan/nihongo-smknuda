@@ -448,6 +448,59 @@ app.get('/api/tts', async (req, res) => {
   }
 });
 
+const TRANSLATE_UA =
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const pendingTranslations = new Map<string, Promise<{ jp: string; romaji: string }>>();
+
+function cleanZeroWidth(s: string): string {
+  return s.replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+async function fetchGoogleTranslate(q: string, client: 'gtx' | 'dict-chrome-ex'): Promise<{ jp: string; romaji: string }> {
+  const url = `https://translate.googleapis.com/translate_a/single?client=${client}&sl=id&tl=ja&dt=t&dt=rm&q=${encodeURIComponent(q)}`;
+  const r = await fetch(url, {
+    headers: { 'User-Agent': TRANSLATE_UA, Accept: 'application/json' },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!r.ok) throw new Error(`Google(${client}) HTTP ${r.status}`);
+  const data = (await r.json()) as [Array<[string | null, string | null, string | null]>];
+  const segments = Array.isArray(data?.[0]) ? data[0] : [];
+  const jp = cleanZeroWidth(segments.map((s) => s?.[0] ?? '').join(''));
+  const romaji = cleanZeroWidth(segments.map((s) => s?.[2] ?? '').filter(Boolean).join(' '));
+  if (!jp) throw new Error(`Google(${client}) empty translation`);
+  return { jp, romaji };
+}
+
+async function fetchMyMemoryTranslate(q: string): Promise<{ jp: string; romaji: string }> {
+  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(q)}&langpair=id|ja`;
+  const r = await fetch(url, {
+    headers: { 'User-Agent': TRANSLATE_UA, Accept: 'application/json' },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!r.ok) throw new Error(`MyMemory HTTP ${r.status}`);
+  const data = (await r.json()) as { responseStatus?: number; responseData?: { translatedText?: string } };
+  const jp = cleanZeroWidth(data?.responseData?.translatedText ?? '');
+  if (!jp || data?.responseStatus === 429) throw new Error(`MyMemory status ${data?.responseStatus ?? 'empty'}`);
+  return { jp, romaji: '' };
+}
+
+async function translateIdToJa(q: string): Promise<{ jp: string; romaji: string }> {
+  const providers = [
+    () => fetchGoogleTranslate(q, 'gtx'),
+    () => fetchGoogleTranslate(q, 'dict-chrome-ex'),
+    () => fetchMyMemoryTranslate(q),
+  ];
+  const errors: string[] = [];
+  for (const run of providers) {
+    try {
+      return await run();
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+  throw new Error(`All translate providers failed: ${errors.join(' | ')}`);
+}
+
 app.get('/api/translate', async (req, res) => {
   const q = String(req.query.q ?? '').trim();
   if (!q || q.length > 500) {
@@ -459,19 +512,17 @@ app.get('/api/translate', async (req, res) => {
     .prepare('SELECT source_text, jp_text, romaji FROM translations_cache WHERE q_hash = ?')
     .get(key) as { source_text: string; jp_text: string; romaji: string } | undefined;
   if (cached) {
-    res.json({ source: q, jp: cached.jp_text, romaji: cached.romaji });
+    res.json({ source: q, jp: cleanZeroWidth(cached.jp_text), romaji: cleanZeroWidth(cached.romaji) });
     return;
   }
 
   try {
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=id&tl=ja&dt=t&dt=rm&q=${encodeURIComponent(q)}`;
-    const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    if (!r.ok) throw new Error('Translate upstream error');
-    const data = (await r.json()) as [Array<[string | null, string | null, string | null]>];
-    const segments = Array.isArray(data?.[0]) ? data[0] : [];
-    const jp = segments.map((s) => s?.[0] ?? '').join('').trim();
-    const romaji = segments.map((s) => s?.[2] ?? '').filter(Boolean).join(' ').trim();
-    if (!jp) throw new Error('Empty translation');
+    let inflight = pendingTranslations.get(key);
+    if (!inflight) {
+      inflight = translateIdToJa(q).finally(() => pendingTranslations.delete(key));
+      pendingTranslations.set(key, inflight);
+    }
+    const { jp, romaji } = await inflight;
 
     db.prepare(
       'INSERT OR REPLACE INTO translations_cache (q_hash, source_text, jp_text, romaji) VALUES (?, ?, ?, ?)'
