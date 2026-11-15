@@ -21,6 +21,7 @@ interface LeaderEntry {
   hiraganaMastered: number;
   katakanaMastered: number;
   vocabMastered: number;
+  kanjiMastered?: number;
 }
 
 export default function LeaderboardPage() {
@@ -119,7 +120,7 @@ export default function LeaderboardPage() {
                 <div className="lb-metrics">
                   <div className="lb-xp">{e.xp} XP</div>
                   <div className="muted small">
-                    あ {pct(e.hiraganaMastered, hiraTotal)}% · ア {pct(e.katakanaMastered, kataTotal)}% · 語 {pct(e.vocabMastered, vocabTotal)}%
+                    あ {pct(e.hiraganaMastered, hiraTotal)}% · ア {pct(e.katakanaMastered, kataTotal)}% · 語 {pct(e.vocabMastered, vocabTotal)}% · 漢 {e.kanjiMastered ?? 0}
                   </div>
                 </div>
               </div>

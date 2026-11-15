@@ -32,13 +32,25 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS user_progress (
     user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    data_json TEXT NOT NULL DEFAULT '{"kana":{},"vocab":{},"xp":0,"days":[],"quizzes":0}',
+    data_json TEXT NOT NULL DEFAULT '{"kana":{},"vocab":{},"vocabSrs":{},"kanji":{},"bunpou":{},"kaiwa":[],"xp":0,"days":[],"quizzes":0}',
     xp INTEGER NOT NULL DEFAULT 0,
     hiragana_mastered INTEGER NOT NULL DEFAULT 0,
     katakana_mastered INTEGER NOT NULL DEFAULT 0,
     vocab_mastered INTEGER NOT NULL DEFAULT 0,
+    kanji_mastered INTEGER NOT NULL DEFAULT 0,
     streak INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS teacher_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    target_type TEXT NOT NULL,
+    target_value INTEGER NOT NULL,
+    due_date TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS translations_cache (
@@ -59,6 +71,10 @@ if (!userCols.some((c) => c.name === 'jenjang')) {
 }
 if (!userCols.some((c) => c.name === 'school')) {
   db.exec("ALTER TABLE users ADD COLUMN school TEXT NOT NULL DEFAULT 'SMK NU Darussalam'");
+}
+const progCols = db.prepare('PRAGMA table_info(user_progress)').all() as Array<{ name: string }>;
+if (!progCols.some((c) => c.name === 'kanji_mastered')) {
+  db.exec('ALTER TABLE user_progress ADD COLUMN kanji_mastered INTEGER NOT NULL DEFAULT 0');
 }
 
 export interface UserRow {

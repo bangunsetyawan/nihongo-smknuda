@@ -21,7 +21,10 @@ import {
   type AuthRequest,
 } from './auth.js';
 import { db, toPublicUser, type UserRow } from './db.js';
+import { BUNPOU_QUESTION_MAP, isBunpouAnswerCorrect } from './data/bunpou.js';
 import { isKanaAnswerCorrect, KANA_MAP } from './data/kana-romaji.js';
+import { isKanjiAnswerCorrect, KANJI_MAP } from './data/kanji.js';
+import { KAIWA_IDS } from './data/kaiwa-ids.js';
 import { VOCAB_IDS } from './data/vocab-ids.js';
 
 const execFileAsync = promisify(execFile);
@@ -121,14 +124,80 @@ app.use(cookieParser());
 
 const OAUTH_STATE_COOKIE = 'nihongo_oauth_state';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+interface SrsStat {
+  i: number;
+  r: number;
+}
+
+interface ItemStat {
+  c?: number;
+  w?: number;
+  s?: number;
+  t?: number;
+  i?: number;
+  r?: number;
+}
 
 interface ProgressPayload {
-  kana?: Record<string, { c?: number; w?: number; s?: number; t?: number }>;
+  kana?: Record<string, ItemStat>;
   vocab?: Record<string, boolean>;
+  vocabSrs?: Record<string, SrsStat>;
+  vocabStats?: Record<string, { c: number; w: number }>;
+  kanji?: Record<string, ItemStat>;
+  bunpou?: Record<string, { c: number; w: number }>;
+  bunpouQuestions?: Record<string, { c: number; w: number }>;
+  kaiwa?: string[];
   xp?: number;
   days?: string[];
   quizzes?: number;
   name?: string;
+}
+
+function normalizeSrs(data: ProgressPayload, now = Date.now()): boolean {
+  let changed = false;
+  const tomorrow = now + DAY_MS;
+
+  if (data.kana && typeof data.kana === 'object') {
+    for (const [ch, st] of Object.entries(data.kana)) {
+      if (!st || typeof st !== 'object') continue;
+      if (typeof st.i !== 'number' || !Number.isFinite(st.i) || st.i < 1 || typeof st.r !== 'number' || !Number.isFinite(st.r) || st.r <= 0) {
+        data.kana[ch] = {
+          c: st.c ?? 0,
+          w: st.w ?? 0,
+          s: st.s ?? 0,
+          t: st.t ?? 0,
+          i: typeof st.i === 'number' && Number.isFinite(st.i) && st.i >= 1 ? st.i : 1,
+          r: typeof st.r === 'number' && Number.isFinite(st.r) && st.r > 0 ? st.r : tomorrow,
+        };
+        changed = true;
+      }
+    }
+  } else {
+    data.kana = {};
+    changed = true;
+  }
+
+  if (!data.vocab || typeof data.vocab !== 'object') {
+    data.vocab = {};
+    changed = true;
+  }
+  if (!data.vocabSrs || typeof data.vocabSrs !== 'object') {
+    data.vocabSrs = {};
+    if (Object.values(data.vocab).some(Boolean)) changed = true;
+  }
+  for (const [id, known] of Object.entries(data.vocab)) {
+    if (known) {
+      const srs = data.vocabSrs[id];
+      if (!srs || typeof srs.i !== 'number' || !Number.isFinite(srs.i) || srs.i < 1 || typeof srs.r !== 'number' || !Number.isFinite(srs.r) || srs.r <= 0) {
+        data.vocabSrs[id] = { i: 1, r: tomorrow };
+        changed = true;
+      }
+    }
+  }
+
+  return changed;
 }
 
 function summarizeProgress(data: ProgressPayload) {
@@ -150,6 +219,9 @@ function summarizeProgress(data: ProgressPayload) {
       else if (code >= 0x30a0 && code <= 0x30ff) katakanaMastered++;
     }
   }
+  const kanjiMastered = data.kanji
+    ? Object.values(data.kanji).filter((st) => (st?.s ?? 0) >= 5).length
+    : 0;
   const days = Array.isArray(data.days) ? [...new Set(data.days)].sort() : [];
   let streak = 0;
   if (days.length > 0) {
@@ -163,7 +235,7 @@ function summarizeProgress(data: ProgressPayload) {
       cursorMs -= 86_400_000;
     }
   }
-  return { xp, hiraganaMastered, katakanaMastered, vocabMastered, streak };
+  return { xp, hiraganaMastered, katakanaMastered, vocabMastered, kanjiMastered, streak };
 }
 
 function getOrCreateProgress(userId: number): ProgressPayload {
@@ -172,12 +244,16 @@ function getOrCreateProgress(userId: number): ProgressPayload {
     | undefined;
   if (row) {
     try {
-      return JSON.parse(row.data_json) as ProgressPayload;
+      const parsed = JSON.parse(row.data_json) as ProgressPayload;
+      if (normalizeSrs(parsed)) {
+        db.prepare('UPDATE user_progress SET data_json = ? WHERE user_id = ?').run(JSON.stringify(parsed), userId);
+      }
+      return parsed;
     } catch {
-      return { kana: {}, vocab: {}, xp: 0, days: [], quizzes: 0 };
+      return { kana: {}, vocab: {}, vocabSrs: {}, kanji: {}, bunpou: {}, kaiwa: [], xp: 0, days: [], quizzes: 0 };
     }
   }
-  const empty: ProgressPayload = { kana: {}, vocab: {}, xp: 0, days: [], quizzes: 0 };
+  const empty: ProgressPayload = { kana: {}, vocab: {}, vocabSrs: {}, kanji: {}, bunpou: {}, kaiwa: [], xp: 0, days: [], quizzes: 0 };
   db.prepare('INSERT INTO user_progress (user_id, data_json) VALUES (?, ?)').run(userId, JSON.stringify(empty));
   return empty;
 }
@@ -529,14 +605,15 @@ app.get('/api/progress', requireAuth, (req: AuthRequest, res) => {
 function saveProgressRow(userId: number, data: ProgressPayload) {
   const sum = summarizeProgress(data);
   db.prepare(
-    `INSERT INTO user_progress (user_id, data_json, xp, hiragana_mastered, katakana_mastered, vocab_mastered, streak, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `INSERT INTO user_progress (user_id, data_json, xp, hiragana_mastered, katakana_mastered, vocab_mastered, kanji_mastered, streak, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT(user_id) DO UPDATE SET
        data_json = excluded.data_json,
        xp = excluded.xp,
        hiragana_mastered = excluded.hiragana_mastered,
        katakana_mastered = excluded.katakana_mastered,
        vocab_mastered = excluded.vocab_mastered,
+       kanji_mastered = excluded.kanji_mastered,
        streak = excluded.streak,
        updated_at = datetime('now')`
   ).run(
@@ -546,6 +623,7 @@ function saveProgressRow(userId: number, data: ProgressPayload) {
     sum.hiraganaMastered,
     sum.katakanaMastered,
     sum.vocabMastered,
+    sum.kanjiMastered,
     sum.streak
   );
   return sum;
@@ -566,7 +644,7 @@ function validateRestoreSnapshot(raw: unknown): { ok: true; data: ProgressPayloa
   if (!obj.kana || typeof obj.kana !== 'object' || Array.isArray(obj.kana)) {
     return { ok: false, error: 'Data huruf kana tidak valid.' };
   }
-  const cleanKana: Record<string, { c: number; w: number; s: number; t: number }> = {};
+  const cleanKana: Record<string, { c: number; w: number; s: number; t: number; i?: number; r?: number }> = {};
   for (const [ch, val] of Object.entries(obj.kana as Record<string, unknown>)) {
     if (!(ch in KANA_MAP)) {
       return { ok: false, error: `Huruf kana tidak dikenal: ${ch}` };
@@ -579,15 +657,19 @@ function validateRestoreSnapshot(raw: unknown): { ok: true; data: ProgressPayloa
     const w = Number(st.w ?? 0);
     const s = Number(st.s ?? 0);
     const t = Number(st.t ?? 0);
+    const iVal = st.i === undefined ? undefined : Number(st.i);
+    const rVal = st.r === undefined ? undefined : Number(st.r);
     if (
       !Number.isInteger(c) || c < 0 || c > 100000 ||
       !Number.isInteger(w) || w < 0 || w > 100000 ||
       !Number.isInteger(s) || s < 0 || s > 100000 ||
-      !Number.isFinite(t) || t < 0
+      !Number.isFinite(t) || t < 0 ||
+      (iVal !== undefined && (!Number.isInteger(iVal) || iVal < 1 || iVal > 36500)) ||
+      (rVal !== undefined && (!Number.isFinite(rVal) || rVal < 0))
     ) {
       return { ok: false, error: `Angka statistik huruf ${ch} tidak wajar.` };
     }
-    cleanKana[ch] = { c, w, s, t };
+    cleanKana[ch] = { c, w, s, t, ...(iVal !== undefined ? { i: iVal } : {}), ...(rVal !== undefined ? { r: rVal } : {}) };
   }
 
   const cleanVocab: Record<string, boolean> = {};
@@ -603,6 +685,19 @@ function validateRestoreSnapshot(raw: unknown): { ok: true; data: ProgressPayloa
         return { ok: false, error: `Status kosakata ${id} tidak valid.` };
       }
       cleanVocab[id] = val;
+    }
+  }
+
+  const cleanVocabSrs: Record<string, SrsStat> = {};
+  if (obj.vocabSrs && typeof obj.vocabSrs === 'object' && !Array.isArray(obj.vocabSrs)) {
+    for (const [id, val] of Object.entries(obj.vocabSrs as Record<string, unknown>)) {
+      if (!VOCAB_IDS.has(id) || !val || typeof val !== 'object') continue;
+      const st = val as Record<string, unknown>;
+      const i = Number(st.i ?? 1);
+      const r = Number(st.r ?? 0);
+      if (Number.isInteger(i) && i >= 1 && i <= 36500 && Number.isFinite(r) && r > 0) {
+        cleanVocabSrs[id] = { i, r };
+      }
     }
   }
 
@@ -625,16 +720,19 @@ function validateRestoreSnapshot(raw: unknown): { ok: true; data: ProgressPayloa
   }
 
   const name = typeof obj.name === 'string' ? obj.name.trim().slice(0, 32) : undefined;
+  const result: ProgressPayload = {
+    kana: cleanKana,
+    vocab: cleanVocab,
+    vocabSrs: cleanVocabSrs,
+    xp,
+    days: cleanDays,
+    quizzes,
+    ...(name ? { name } : {}),
+  };
+  normalizeSrs(result);
   return {
     ok: true,
-    data: {
-      kana: cleanKana,
-      vocab: cleanVocab,
-      xp,
-      days: cleanDays,
-      quizzes,
-      ...(name ? { name } : {}),
-    },
+    data: result,
   };
 }
 
@@ -650,6 +748,12 @@ app.put('/api/progress', requireAuth, (req: AuthRequest, res) => {
   const clean: ProgressPayload = {
     kana: current.kana ?? {},
     vocab: current.vocab ?? {},
+    vocabSrs: current.vocabSrs ?? {},
+    vocabStats: current.vocabStats ?? {},
+    kanji: current.kanji ?? {},
+    bunpou: current.bunpou ?? {},
+    bunpouQuestions: current.bunpouQuestions ?? {},
+    kaiwa: Array.isArray(current.kaiwa) ? current.kaiwa : [],
     xp: current.xp ?? 0,
     days: Array.isArray(current.days) ? current.days : [],
     quizzes: current.quizzes ?? 0,
@@ -665,6 +769,12 @@ app.delete('/api/progress', requireAuth, (req: AuthRequest, res) => {
   const reset: ProgressPayload = {
     kana: {},
     vocab: {},
+    vocabSrs: {},
+    vocabStats: {},
+    kanji: {},
+    bunpou: {},
+    bunpouQuestions: {},
+    kaiwa: [],
     xp: 0,
     days: [],
     quizzes: 0,
@@ -693,11 +803,18 @@ app.post('/api/practice/record', requireAuth, practiceRateLimit, (req: AuthReque
   const next: ProgressPayload = {
     kana: { ...(current.kana ?? {}) },
     vocab: { ...(current.vocab ?? {}) },
+    vocabSrs: { ...(current.vocabSrs ?? {}) },
+    vocabStats: { ...(current.vocabStats ?? {}) },
+    kanji: { ...(current.kanji ?? {}) },
+    bunpou: { ...(current.bunpou ?? {}) },
+    bunpouQuestions: { ...(current.bunpouQuestions ?? {}) },
+    kaiwa: Array.isArray(current.kaiwa) ? [...current.kaiwa] : [],
     xp: typeof current.xp === 'number' ? current.xp : 0,
     days: Array.isArray(current.days) ? [...current.days] : [],
     quizzes: typeof current.quizzes === 'number' ? current.quizzes : 0,
     name: current.name,
   };
+  const now = Date.now();
   const today = todayWib();
   const ensureToday = () => {
     if (!next.days!.includes(today)) {
@@ -714,9 +831,76 @@ app.post('/api/practice/record', requireAuth, practiceRateLimit, (req: AuthReque
     // Abaikan flag correct dari browser; verifikasi penuh di server terhadap peta kana.
     const correct = isKanaAnswerCorrect(ch, body.given, body.mode);
     const prev = next.kana![ch] ?? { c: 0, w: 0, s: 0, t: 0 };
-    next.kana![ch] = correct
-      ? { c: (prev.c ?? 0) + 1, w: prev.w ?? 0, s: (prev.s ?? 0) + 1, t: Date.now() }
-      : { c: prev.c ?? 0, w: (prev.w ?? 0) + 1, s: 0, t: Date.now() };
+    if (correct) {
+      const nextInterval = (prev.i || 1) * 2;
+      next.kana![ch] = {
+        c: (prev.c ?? 0) + 1,
+        w: prev.w ?? 0,
+        s: (prev.s ?? 0) + 1,
+        t: now,
+        i: nextInterval,
+        r: now + nextInterval * DAY_MS,
+      };
+    } else {
+      next.kana![ch] = {
+        c: prev.c ?? 0,
+        w: (prev.w ?? 0) + 1,
+        s: 0,
+        t: now,
+        i: 1,
+        r: now + DAY_MS,
+      };
+    }
+    next.xp = (next.xp ?? 0) + (correct ? 10 : 1);
+    ensureToday();
+  } else if (type === 'kanji_answer') {
+    const ch = String(body.char ?? '').trim();
+    if (!(ch in KANJI_MAP)) {
+      res.status(400).json({ error: 'Karakter kanji tidak dikenali.' });
+      return;
+    }
+    // Abaikan flag correct dari browser; verifikasi penuh di server terhadap peta kanji.
+    const correct = isKanjiAnswerCorrect(ch, body.given, body.mode);
+    const prev = next.kanji![ch] ?? { c: 0, w: 0, s: 0, t: 0, i: 1, r: 0 };
+    if (correct) {
+      const nextInterval = (prev.i || 1) * 2;
+      next.kanji![ch] = {
+        c: (prev.c ?? 0) + 1,
+        w: prev.w ?? 0,
+        s: (prev.s ?? 0) + 1,
+        t: now,
+        i: nextInterval,
+        r: now + nextInterval * DAY_MS,
+      };
+    } else {
+      next.kanji![ch] = {
+        c: prev.c ?? 0,
+        w: (prev.w ?? 0) + 1,
+        s: 0,
+        t: now,
+        i: 1,
+        r: now + DAY_MS,
+      };
+    }
+    next.xp = (next.xp ?? 0) + (correct ? 10 : 1);
+    ensureToday();
+  } else if (type === 'bunpou_answer') {
+    const questionId = String(body.questionId ?? '').trim();
+    const q = BUNPOU_QUESTION_MAP[questionId];
+    if (!q) {
+      res.status(400).json({ error: 'ID soal bunpou tidak dikenali.' });
+      return;
+    }
+    // Abaikan flag correct dari browser; verifikasi penuh di server terhadap kunci soal bunpou.
+    const correct = isBunpouAnswerCorrect(questionId, body.given);
+    const prevTopic = next.bunpou![q.topicId] ?? { c: 0, w: 0 };
+    next.bunpou![q.topicId] = correct
+      ? { c: prevTopic.c + 1, w: prevTopic.w }
+      : { c: prevTopic.c, w: prevTopic.w + 1 };
+    const prevQ = next.bunpouQuestions![questionId] ?? { c: 0, w: 0 };
+    next.bunpouQuestions![questionId] = correct
+      ? { c: prevQ.c + 1, w: prevQ.w }
+      : { c: prevQ.c, w: prevQ.w + 1 };
     next.xp = (next.xp ?? 0) + (correct ? 10 : 1);
     ensureToday();
   } else if (type === 'quiz_finish') {
@@ -725,7 +909,14 @@ app.post('/api/practice/record', requireAuth, practiceRateLimit, (req: AuthReque
       res.status(400).json({ error: 'Daftar jawaban kuis harus berisi 1–50 soal.' });
       return;
     }
-    const quizType = body.quizType === 'vocab' ? 'vocab' : 'kana';
+    const quizType =
+      body.quizType === 'vocab'
+        ? 'vocab'
+        : body.quizType === 'mixed'
+          ? 'mixed'
+          : body.quizType === 'kanji'
+            ? 'kanji'
+            : 'kana';
     let correctCount = 0;
     if (quizType === 'vocab') {
       for (const item of answersRaw) {
@@ -735,7 +926,47 @@ app.post('/api/practice/record', requireAuth, practiceRateLimit, (req: AuthReque
           res.status(400).json({ error: 'Jawaban kuis kosakata mengandung ID tidak valid.' });
           return;
         }
-        if (id === givenId) correctCount++;
+        const ok = id === givenId;
+        if (ok) correctCount++;
+        const prevVs = next.vocabStats![id] ?? { c: 0, w: 0 };
+        next.vocabStats![id] = ok
+          ? { c: prevVs.c + 1, w: prevVs.w }
+          : { c: prevVs.c, w: prevVs.w + 1 };
+      }
+    } else if (quizType === 'kanji') {
+      for (const item of answersRaw) {
+        const rec = (item ?? {}) as Record<string, unknown>;
+        const ch = String(rec.char ?? '').trim();
+        if (!(ch in KANJI_MAP)) {
+          res.status(400).json({ error: 'Jawaban kuis mengandung karakter kanji tidak valid.' });
+          return;
+        }
+        if (isKanjiAnswerCorrect(ch, rec.given, rec.mode)) correctCount++;
+      }
+    } else if (quizType === 'mixed') {
+      for (const item of answersRaw) {
+        const rec = (item ?? {}) as Record<string, unknown>;
+        if (rec.kind === 'vocab') {
+          const id = String(rec.id ?? '').trim();
+          const givenId = String(rec.givenId ?? '').trim();
+          if (!VOCAB_IDS.has(id) || (givenId && !VOCAB_IDS.has(givenId))) {
+            res.status(400).json({ error: 'Jawaban kuis kosakata mengandung ID tidak valid.' });
+            return;
+          }
+          const ok = id === givenId;
+          if (ok) correctCount++;
+          const prevVs = next.vocabStats![id] ?? { c: 0, w: 0 };
+          next.vocabStats![id] = ok
+            ? { c: prevVs.c + 1, w: prevVs.w }
+            : { c: prevVs.c, w: prevVs.w + 1 };
+        } else {
+          const ch = String(rec.char ?? '').trim();
+          if (!(ch in KANA_MAP)) {
+            res.status(400).json({ error: 'Jawaban kuis mengandung karakter kana tidak valid.' });
+            return;
+          }
+          if (isKanaAnswerCorrect(ch, rec.given, rec.mode)) correctCount++;
+        }
       }
     } else {
       for (const item of answersRaw) {
@@ -762,8 +993,28 @@ app.post('/api/practice/record', requireAuth, practiceRateLimit, (req: AuthReque
     const nextVal = type === 'vocab_toggle' ? !next.vocab![id] : Boolean(body.known);
     const firstTime = nextVal && !hadKey;
     next.vocab![id] = nextVal;
+    if (nextVal) {
+      next.vocabSrs![id] = { i: 1, r: now + DAY_MS };
+    } else {
+      delete next.vocabSrs![id];
+    }
     if (firstTime) next.xp = (next.xp ?? 0) + 5;
     if (nextVal) ensureToday();
+  } else if (type === 'kaiwa_complete') {
+    const id = String(body.id ?? '').trim();
+    if (!KAIWA_IDS.has(id)) {
+      res.status(400).json({ error: 'ID dialog kaiwa tidak dikenal.' });
+      return;
+    }
+    const doneSet = new Set(Array.isArray(next.kaiwa) ? next.kaiwa : []);
+    if (doneSet.has(id)) {
+      res.status(409).json({ error: 'Dialog ini sudah pernah ditandai selesai.' });
+      return;
+    }
+    doneSet.add(id);
+    next.kaiwa = [...doneSet];
+    next.xp = (next.xp ?? 0) + 5;
+    ensureToday();
   } else {
     res.status(400).json({ error: 'Tipe latihan tidak dikenali.' });
     return;
@@ -917,7 +1168,8 @@ app.get('/api/leaderboard', (req, res) => {
               COALESCE(p.streak, 0) AS streak,
               COALESCE(p.hiragana_mastered, 0) AS hiragana_mastered,
               COALESCE(p.katakana_mastered, 0) AS katakana_mastered,
-              COALESCE(p.vocab_mastered, 0) AS vocab_mastered
+              COALESCE(p.vocab_mastered, 0) AS vocab_mastered,
+              COALESCE(p.kanji_mastered, 0) AS kanji_mastered
        FROM users u
        LEFT JOIN user_progress p ON p.user_id = u.id
        WHERE u.profile_completed = 1 AND u.show_on_leaderboard = 1 AND u.role = 'student'
@@ -940,6 +1192,7 @@ app.get('/api/leaderboard', (req, res) => {
     hiragana_mastered: number;
     katakana_mastered: number;
     vocab_mastered: number;
+    kanji_mastered: number;
   }>;
 
   res.json({
@@ -958,9 +1211,50 @@ app.get('/api/leaderboard', (req, res) => {
       hiraganaMastered: r.hiragana_mastered,
       katakanaMastered: r.katakana_mastered,
       vocabMastered: r.vocab_mastered,
+      kanjiMastered: r.kanji_mastered,
     })),
   });
 });
+
+function pickCwStats(
+  raw: Record<string, { c?: number; w?: number }> | undefined,
+): Record<string, { c: number; w: number }> {
+  const out: Record<string, { c: number; w: number }> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [key, val] of Object.entries(raw)) {
+    if (!val || typeof val !== 'object') continue;
+    const c = Number(val.c ?? 0);
+    const w = Number(val.w ?? 0);
+    if (c > 0 || w > 0) {
+      out[key] = { c, w };
+    }
+  }
+  return out;
+}
+
+const ALLOWED_TASK_TYPES = new Set(['kana_mastered', 'vocab_mastered', 'quiz_count', 'xp']);
+
+interface TeacherTaskRow {
+  id: number;
+  title: string;
+  description: string;
+  target_type: string;
+  target_value: number;
+  due_date: string;
+  created_by: string;
+  created_at: string;
+}
+
+function computeTaskMetric(
+  progress: ProgressPayload,
+  sum: { xp: number; hiraganaMastered: number; katakanaMastered: number; vocabMastered: number },
+  targetType: string,
+): number {
+  if (targetType === 'kana_mastered') return sum.hiraganaMastered + sum.katakanaMastered;
+  if (targetType === 'vocab_mastered') return sum.vocabMastered;
+  if (targetType === 'quiz_count') return typeof progress.quizzes === 'number' ? progress.quizzes : 0;
+  return sum.xp;
+}
 
 app.get('/api/teacher/students', requireAuth, requireTeacher, (_req: AuthRequest, res) => {
   const rows = db
@@ -972,6 +1266,8 @@ app.get('/api/teacher/students', requireAuth, requireTeacher, (_req: AuthRequest
               COALESCE(p.hiragana_mastered, 0) AS hiragana_mastered,
               COALESCE(p.katakana_mastered, 0) AS katakana_mastered,
               COALESCE(p.vocab_mastered, 0) AS vocab_mastered,
+              COALESCE(p.kanji_mastered, 0) AS kanji_mastered,
+              p.data_json,
               p.updated_at AS progress_updated_at
        FROM users u
        LEFT JOIN user_progress p ON p.user_id = u.id
@@ -996,32 +1292,213 @@ app.get('/api/teacher/students', requireAuth, requireTeacher, (_req: AuthRequest
     hiragana_mastered: number;
     katakana_mastered: number;
     vocab_mastered: number;
+    kanji_mastered: number;
+    data_json: string | null;
     progress_updated_at: string | null;
   }>;
 
   res.json({
-    students: rows.map((r) => ({
-      id: r.id,
-      email: r.email,
-      fullName: r.full_name,
-      nickname: r.nickname,
-      japaneseName: r.japanese_name,
-      jenjang: r.jenjang || 'SMK',
-      school: r.school || 'SMK NU Darussalam',
-      kelas: r.kelas,
-      jurusan: r.jurusan,
-      role: r.role,
-      profileCompleted: r.profile_completed === 1,
-      createdAt: r.created_at,
-      lastLoginAt: r.last_login_at,
-      xp: r.xp,
-      streak: r.streak,
-      hiraganaMastered: r.hiragana_mastered,
-      katakanaMastered: r.katakana_mastered,
-      vocabMastered: r.vocab_mastered,
-      progressUpdatedAt: r.progress_updated_at,
-    })),
+    students: rows.map((r) => {
+      let parsed: ProgressPayload = {};
+      if (r.data_json) {
+        try {
+          parsed = JSON.parse(r.data_json) as ProgressPayload;
+        } catch {
+          parsed = {};
+        }
+      }
+      return {
+        id: r.id,
+        email: r.email,
+        fullName: r.full_name,
+        nickname: r.nickname,
+        japaneseName: r.japanese_name,
+        jenjang: r.jenjang || 'SMK',
+        school: r.school || 'SMK NU Darussalam',
+        kelas: r.kelas,
+        jurusan: r.jurusan,
+        role: r.role,
+        profileCompleted: r.profile_completed === 1,
+        createdAt: r.created_at,
+        lastLoginAt: r.last_login_at,
+        xp: r.xp,
+        streak: r.streak,
+        hiraganaMastered: r.hiragana_mastered,
+        katakanaMastered: r.katakana_mastered,
+        vocabMastered: r.vocab_mastered,
+        kanjiMastered: r.kanji_mastered,
+        progressUpdatedAt: r.progress_updated_at,
+        itemStats: {
+          kana: pickCwStats(parsed.kana),
+          vocab: pickCwStats(parsed.vocabStats),
+          kanji: pickCwStats(parsed.kanji),
+          bunpou: pickCwStats(parsed.bunpouQuestions),
+        },
+      };
+    }),
   });
+});
+
+app.get('/api/tasks', requireAuth, (req: AuthRequest, res) => {
+  const tasks = db
+    .prepare('SELECT * FROM teacher_tasks ORDER BY due_date ASC, id DESC')
+    .all() as TeacherTaskRow[];
+  const progress = getOrCreateProgress(req.user!.id);
+  const sum = summarizeProgress(progress);
+  const today = todayWib();
+
+  res.json({
+    tasks: tasks.map((t) => {
+      const currentValue = computeTaskMetric(progress, sum, t.target_type);
+      const completed = currentValue >= t.target_value;
+      const overdue = t.due_date < today;
+      return {
+        id: t.id,
+        title: t.title,
+        description: t.description,
+        targetType: t.target_type,
+        targetValue: t.target_value,
+        dueDate: t.due_date,
+        createdBy: t.created_by,
+        createdAt: t.created_at,
+        currentValue,
+        completed,
+        overdue,
+      };
+    }),
+  });
+});
+
+app.get('/api/teacher/tasks', requireAuth, requireTeacher, (_req: AuthRequest, res) => {
+  const tasks = db
+    .prepare('SELECT * FROM teacher_tasks ORDER BY due_date DESC, id DESC')
+    .all() as TeacherTaskRow[];
+  const studentRows = db
+    .prepare(
+      `SELECT u.id, p.data_json, COALESCE(p.xp, 0) AS xp,
+              COALESCE(p.hiragana_mastered, 0) AS hiragana_mastered,
+              COALESCE(p.katakana_mastered, 0) AS katakana_mastered,
+              COALESCE(p.vocab_mastered, 0) AS vocab_mastered
+       FROM users u
+       LEFT JOIN user_progress p ON p.user_id = u.id
+       WHERE u.role = 'student'`
+    )
+    .all() as Array<{
+    id: number;
+    data_json: string | null;
+    xp: number;
+    hiragana_mastered: number;
+    katakana_mastered: number;
+    vocab_mastered: number;
+  }>;
+
+  const parsedStudents = studentRows.map((s) => {
+    let parsed: ProgressPayload = {};
+    if (s.data_json) {
+      try {
+        parsed = JSON.parse(s.data_json) as ProgressPayload;
+      } catch {
+        parsed = {};
+      }
+    }
+    return {
+      progress: parsed,
+      sum: {
+        xp: s.xp,
+        hiraganaMastered: s.hiragana_mastered,
+        katakanaMastered: s.katakana_mastered,
+        vocabMastered: s.vocab_mastered,
+      },
+    };
+  });
+
+  res.json({
+    tasks: tasks.map((t) => {
+      let completedCount = 0;
+      for (const s of parsedStudents) {
+        if (computeTaskMetric(s.progress, s.sum, t.target_type) >= t.target_value) {
+          completedCount++;
+        }
+      }
+      return {
+        id: t.id,
+        title: t.title,
+        description: t.description,
+        targetType: t.target_type,
+        targetValue: t.target_value,
+        dueDate: t.due_date,
+        createdBy: t.created_by,
+        createdAt: t.created_at,
+        completedCount,
+        totalStudents: parsedStudents.length,
+      };
+    }),
+  });
+});
+
+app.post('/api/teacher/tasks', requireAuth, requireTeacher, (req: AuthRequest, res) => {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const title = String(body.title ?? '').trim();
+  const description = String(body.description ?? '').trim().slice(0, 400);
+  const targetType = String(body.targetType ?? body.target_type ?? '').trim();
+  const targetValue = Number(body.targetValue ?? body.target_value ?? 0);
+  const dueDate = String(body.dueDate ?? body.due_date ?? '').trim();
+
+  if (title.length < 2 || title.length > 120) {
+    res.status(400).json({ error: 'Judul tugas harus 2–120 karakter.' });
+    return;
+  }
+  if (!ALLOWED_TASK_TYPES.has(targetType)) {
+    res.status(400).json({ error: 'Jenis target tugas tidak valid.' });
+    return;
+  }
+  if (!Number.isInteger(targetValue) || targetValue < 1 || targetValue > 100000) {
+    res.status(400).json({ error: 'Nilai target harus bilangan bulat minimal 1.' });
+    return;
+  }
+  if (!isValidIsoDate(dueDate)) {
+    res.status(400).json({ error: 'Tanggal tenggat harus format YYYY-MM-DD yang valid.' });
+    return;
+  }
+
+  const info = db
+    .prepare(
+      `INSERT INTO teacher_tasks (title, description, target_type, target_value, due_date, created_by)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run(title, description, targetType, targetValue, dueDate, req.user!.email);
+
+  const created = db
+    .prepare('SELECT * FROM teacher_tasks WHERE id = ?')
+    .get(Number(info.lastInsertRowid)) as TeacherTaskRow;
+
+  res.status(201).json({
+    ok: true,
+    task: {
+      id: created.id,
+      title: created.title,
+      description: created.description,
+      targetType: created.target_type,
+      targetValue: created.target_value,
+      dueDate: created.due_date,
+      createdBy: created.created_by,
+      createdAt: created.created_at,
+    },
+  });
+});
+
+app.delete('/api/teacher/tasks/:id', requireAuth, requireTeacher, (req: AuthRequest, res) => {
+  const id = Number(req.params.id);
+  if (!id) {
+    res.status(400).json({ error: 'ID tugas tidak valid.' });
+    return;
+  }
+  const info = db.prepare('DELETE FROM teacher_tasks WHERE id = ?').run(id);
+  if (info.changes === 0) {
+    res.status(404).json({ error: 'Tugas tidak ditemukan.' });
+    return;
+  }
+  res.json({ ok: true, id });
 });
 
 app.patch('/api/teacher/students/:id/role', requireAuth, requireTeacher, (req: AuthRequest, res) => {

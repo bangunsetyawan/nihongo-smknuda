@@ -13,6 +13,9 @@ import { PrivacyPage, TermsPage } from './pages/LegalPage';
 import TtsPage from './pages/TtsPage';
 import LeaderboardPage from './pages/LeaderboardPage';
 import TeacherPage from './pages/TeacherPage';
+import KanjiPage from './pages/KanjiPage';
+import BunpouPage from './pages/BunpouPage';
+import KaiwaPage from './pages/KaiwaPage';
 import { initAuth, logout, useAuth } from './lib/auth';
 
 const NAV = [
@@ -48,6 +51,9 @@ export default function App() {
             {NAV.map((n) => (
               <NavLink key={n.to} to={n.to} end={n.end}>{n.label}</NavLink>
             ))}
+            <NavLink to="/kanji">Kanji</NavLink>
+            <NavLink to="/bunpou">Bunpou</NavLink>
+            <NavLink to="/kaiwa">Kaiwa</NavLink>
             <NavLink to="/suara">Suara</NavLink>
             <NavLink to="/peringkat">Peringkat</NavLink>
             <NavLink to="/panduan">Panduan</NavLink>
@@ -82,6 +88,9 @@ export default function App() {
           <Route path="/hiragana" element={<KanaPage key="h" script="hiragana" />} />
           <Route path="/katakana" element={<KanaPage key="k" script="katakana" />} />
           <Route path="/kosakata" element={<VocabPage />} />
+          <Route path="/kanji" element={<KanjiPage />} />
+          <Route path="/bunpou" element={<BunpouPage />} />
+          <Route path="/kaiwa" element={<KaiwaPage />} />
           <Route path="/kuis" element={<Quiz />} />
           <Route path="/panduan" element={<Guide />} />
           <Route path="/jalur" element={<Roadmap />} />
@@ -115,9 +124,12 @@ export default function App() {
               <button type="button" className="btn small" onClick={() => setMoreOpen(false)}>Tutup</button>
             </div>
             <div className="mobile-sheet-grid">
+              <NavLink to="/kanji" className="mobile-sheet-item">漢 Kanji N5/N4</NavLink>
+              <NavLink to="/bunpou" className="mobile-sheet-item">📘 Bunpou</NavLink>
+              <NavLink to="/kaiwa" className="mobile-sheet-item">💬 Kaiwa &amp; Shadowing</NavLink>
               <NavLink to="/suara" className="mobile-sheet-item">🔊 Suara &amp; Terjemah</NavLink>
               <NavLink to="/peringkat" className="mobile-sheet-item">🏆 Peringkat</NavLink>
-              <NavLink to="/panduan" className="mobile-sheet-item">📘 Panduan</NavLink>
+              <NavLink to="/panduan" className="mobile-sheet-item">📖 Panduan</NavLink>
               <NavLink to="/jalur" className="mobile-sheet-item">🗺️ Jalur N4</NavLink>
               <NavLink to="/sumber" className="mobile-sheet-item">📚 Sumber Belajar</NavLink>
               {(user?.role === 'teacher' || user?.role === 'owner') && (
@@ -142,7 +154,7 @@ export default function App() {
         ))}
         <button
           type="button"
-          className={`bottomnav-btn ${moreOpen || ['/suara', '/peringkat', '/panduan', '/jalur', '/sumber', '/rekap', '/lengkapi-profil', '/masuk'].includes(pathname) ? 'active' : ''}`}
+          className={`bottomnav-btn ${moreOpen || ['/kanji', '/bunpou', '/kaiwa', '/suara', '/peringkat', '/panduan', '/jalur', '/sumber', '/rekap', '/lengkapi-profil', '/masuk'].includes(pathname) ? 'active' : ''}`}
           onClick={() => setMoreOpen((v) => !v)}
         >
           <span className="bn-icon">☰</span>

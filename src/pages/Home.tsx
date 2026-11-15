@@ -1,11 +1,24 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { allKana } from '../data/kana';
+import { KANJI_LIST } from '../data/kanji';
 import { VOCAB } from '../data/vocab';
 import { useAuth } from '../lib/auth';
 import { formatUserAffiliation } from '../lib/education';
 import { convertToJapaneseName } from '../lib/japaneseName';
-import { exportProgress, importProgress, level, mastery, resetProgress, setName, streak, useProgress, useSyncStatus } from '../lib/progress';
+import { dueToday, exportProgress, importProgress, level, mastery, resetProgress, setName, streak, useProgress, useSyncStatus } from '../lib/progress';
+
+interface StudentTask {
+  id: number;
+  title: string;
+  description: string;
+  targetType: string;
+  targetValue: number;
+  dueDate: string;
+  currentValue: number;
+  completed: boolean;
+  overdue: boolean;
+}
 
 export default function Home() {
   const prog = useProgress();
@@ -14,14 +27,33 @@ export default function Home() {
   const navigate = useNavigate();
   const hira = allKana('hiragana');
   const kata = allKana('katakana');
+  const n5Kanji = KANJI_LIST.filter((k) => k.level === 'N5');
   const mh = hira.filter((k) => mastery(prog.kana[k.char]) === 3).length;
   const mk = kata.filter((k) => mastery(prog.kana[k.char]) === 3).length;
   const mv = VOCAB.filter((v) => prog.vocab?.[v.id]).length;
+  const mKanjiN5 = n5Kanji.filter((k) => mastery(prog.kanji?.[k.char]) === 3).length;
   const st = streak(prog.days);
   const lv = level(prog.xp);
+  const due = dueToday(prog);
 
   const [nameInput, setNameInput] = useState(prog.name ?? '');
   const [editingGuestName, setEditingGuestName] = useState(false);
+  const [tasks, setTasks] = useState<StudentTask[]>([]);
+
+  useEffect(() => {
+    if (!user) {
+      setTasks([]);
+      return;
+    }
+    let active = true;
+    fetch('/api/tasks', { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { tasks?: StudentTask[] } | null) => {
+        if (active && data?.tasks) setTasks(data.tasks);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [user, prog.xp, prog.quizzes, mh, mk, mv]);
 
   const nextStep = mh < hira.length * 0.6
     ? { to: '/hiragana', label: 'Lanjut belajar Hiragana', jp: 'あ', targetTitle: 'Target 1: Kuasai Hiragana', cur: mh, total: hira.length }
@@ -180,10 +212,101 @@ export default function Home() {
           <div className="stat-icon jp">語</div>
           <div className="grow"><div className="big-num">{mv}<small className="muted">/{VOCAB.length}</small></div><div className="bar"><div style={{ width: `${(mv / VOCAB.length) * 100}%` }} /></div><div className="muted small">Kosakata</div></div>
         </Link>
+        <Link to="/kanji" className="card stat link-card">
+          <div className="stat-icon jp">漢</div>
+          <div className="grow"><div className="big-num">{mKanjiN5}<small className="muted">/{n5Kanji.length}</small></div><div className="bar"><div style={{ width: `${(mKanjiN5 / n5Kanji.length) * 100}%` }} /></div><div className="muted small">Kanji N5</div></div>
+        </Link>
+      </section>
+
+      <section className="card srs-review-card">
+        <div className="row between wrap gap-s">
+          <div>
+            <div className="srs-kicker">🔄 Review Hari Ini</div>
+            <p className="muted" style={{ margin: '.25rem 0 0' }}>
+              {due.total > 0
+                ? `${due.kana.length} huruf + ${due.vocab.length} kosakata siap diulang sekarang.`
+                : 'Tidak ada review hari ini — bagus!'}
+            </p>
+          </div>
+          {due.total > 0 && (
+            <Link to="/kuis?mode=review" className="btn primary">
+              Mulai Review ({due.total}) →
+            </Link>
+          )}
+        </div>
+      </section>
+
+      <section className="card tasks-card" style={{ marginTop: '.85rem' }}>
+        <div className="row between wrap gap-s">
+          <div className="srs-kicker">📌 Tugas Minggu Ini</div>
+          {!user && <Link to="/masuk" className="btn small">Login siswa</Link>}
+        </div>
+        {!user ? (
+          <p className="muted small" style={{ margin: '.35rem 0 0' }}>
+            Belum ada tugas minggu ini — masuk dengan akun sekolah untuk melihat target dari guru.
+          </p>
+        ) : (() => {
+          const activeTasks = tasks.filter((t) => !t.overdue);
+          const pastTasks = tasks.filter((t) => t.overdue);
+          return (
+            <>
+              {activeTasks.length === 0 && (
+                <p className="muted" style={{ margin: '.35rem 0 0' }}>Belum ada tugas minggu ini</p>
+              )}
+              {tasks.length > 0 && (
+                <div className="tasks-list">
+                  {[...activeTasks, ...pastTasks].map((t) => {
+                    const ratio = Math.min(100, Math.round((t.currentValue / Math.max(1, t.targetValue)) * 100));
+                    const shownCur = Math.min(t.currentValue, t.targetValue);
+                    return (
+                      <div key={t.id} className={`task-row ${t.completed ? 'done' : t.overdue ? 'overdue' : ''}`}>
+                        <div className="row between wrap gap-s">
+                          <div>
+                            <strong>{t.title}</strong>
+                            {t.description && <div className="muted small">{t.description}</div>}
+                          </div>
+                          <span className={`pill ${t.completed ? 'pill-ok' : t.overdue ? 'pill-bad' : ''}`}>
+                            {t.completed ? (t.overdue ? 'Selesai ✓' : 'Tercapai ✓') : t.overdue ? 'Terlambat' : `${shownCur}/${t.targetValue}`}
+                          </span>
+                        </div>
+                        <div className="row between gap-s small muted" style={{ marginTop: '.35rem' }}>
+                          <span>Progres: {t.currentValue}/{t.targetValue}</span>
+                          <span>Tenggat: {t.dueDate}</span>
+                        </div>
+                        <div className="bar" style={{ marginTop: '.25rem' }}><div style={{ width: `${ratio}%` }} /></div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          );
+        })()}
       </section>
 
       <h2>Fitur &amp; Pemantauan</h2>
       <section className="steps">
+        <Link to="/kanji" className="card step">
+          <div className="step-n jp">漢</div>
+          <div>
+            <h3>Kanji N5 &amp; N4 <span className="jp muted">漢字</span></h3>
+            <p className="muted">284 kanji dasar dengan bacaan on/kun, contoh kata, dan kuis adaptif.</p>
+          </div>
+        </Link>
+        <Link to="/bunpou" className="card step">
+          <div className="step-n">📘</div>
+          <div>
+            <h3>Tata Bahasa <span className="jp muted">文法</span></h3>
+            <p className="muted">12 pola Bunpou inti N5/N4 dengan penjelasan Indonesia &amp; latihan soal.</p>
+          </div>
+        </Link>
+        <Link to="/kaiwa" className="card step">
+          <div className="step-n">💬</div>
+          <div>
+            <h3>Dialog &amp; Shadowing <span className="jp muted">会話</span></h3>
+            <p className="muted">8 percakapan situasi sekolah &amp; kerja dengan audio pelan dan jeda tiru.</p>
+          </div>
+        </Link>
         <Link to="/suara" className="card step">
           <div className="step-n">🔊</div>
           <div>

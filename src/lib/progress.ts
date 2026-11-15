@@ -1,16 +1,40 @@
 // Progres belajar disimpan di perangkat siswa (localStorage) dan disinkronkan ke server saat login.
 import { useSyncExternalStore } from 'react';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export interface SrsStat {
+  i: number; // interval (hari)
+  r: number; // timestamp review berikutnya (ms)
+}
+
 export interface KanaStat {
   c: number; // total benar
   w: number; // total salah
   s: number; // benar berturut-turut
   t: number; // terakhir dilatih (ms)
+  i?: number; // interval SRS (hari)
+  r?: number; // nextReview (timestamp ms)
+}
+
+export interface KanjiStat {
+  c: number;
+  w: number;
+  s: number;
+  t: number;
+  i: number;
+  r: number;
 }
 
 export interface Progress {
   kana: Record<string, KanaStat>;
   vocab?: Record<string, boolean>;
+  vocabSrs?: Record<string, SrsStat>;
+  vocabStats?: Record<string, { c: number; w: number }>;
+  kanji?: Record<string, KanjiStat>;
+  bunpou?: Record<string, { c: number; w: number }>;
+  bunpouQuestions?: Record<string, { c: number; w: number }>;
+  kaiwa?: string[];
   xp: number;
   days: string[]; // tanggal belajar (YYYY-MM-DD)
   quizzes: number;
@@ -20,7 +44,7 @@ export interface Progress {
 export type SyncStatus = 'synced' | 'syncing' | 'pending' | 'offline';
 
 const KEY = 'nihongo-smk:v1';
-const empty: Progress = { kana: {}, vocab: {}, xp: 0, days: [], quizzes: 0 };
+const empty: Progress = { kana: {}, vocab: {}, vocabSrs: {}, vocabStats: {}, kanji: {}, bunpou: {}, bunpouQuestions: {}, kaiwa: [], xp: 0, days: [], quizzes: 0 };
 
 let state: Progress = load();
 const subs = new Set<() => void>();
@@ -105,8 +129,8 @@ export function setCloudSync(enabled: boolean) {
   notifySync();
 }
 
-async function recordPracticeOnServer(payload: Record<string, unknown>) {
-  if (!cloudSyncEnabled) return;
+async function recordPracticeOnServer(payload: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
+  if (!cloudSyncEnabled) return { ok: true };
   pendingSync = true;
   syncInFlight = true;
   notifySync();
@@ -118,24 +142,33 @@ async function recordPracticeOnServer(payload: Record<string, unknown>) {
       keepalive: true,
       body: JSON.stringify(payload),
     });
+    const data = (await res.json().catch(() => ({}))) as { progress?: Progress; error?: string };
     if (!res.ok) {
       pendingSync = true;
-      return;
+      return { ok: false, error: data.error };
     }
     pendingSync = false;
-    const data = (await res.json()) as { progress?: Progress };
     if (data.progress) {
       state = {
+        ...empty,
         ...state,
         ...data.progress,
         kana: data.progress.kana ?? state.kana,
         vocab: data.progress.vocab ?? state.vocab,
+        vocabSrs: data.progress.vocabSrs ?? state.vocabSrs ?? {},
+        vocabStats: data.progress.vocabStats ?? state.vocabStats ?? {},
+        kanji: data.progress.kanji ?? state.kanji ?? {},
+        bunpou: data.progress.bunpou ?? state.bunpou ?? {},
+        bunpouQuestions: data.progress.bunpouQuestions ?? state.bunpouQuestions ?? {},
+        kaiwa: Array.isArray(data.progress.kaiwa) ? data.progress.kaiwa : (state.kaiwa ?? []),
       };
       try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
       subs.forEach((f) => f());
     }
+    return { ok: true };
   } catch {
     pendingSync = true;
+    return { ok: false, error: 'Gagal menghubungi server.' };
   } finally {
     syncInFlight = false;
     notifySync();
@@ -154,6 +187,8 @@ export function mergeServerProgress(serverProg?: Partial<Progress> | null) {
         w: Math.max(ls.w, ss?.w ?? 0),
         s: ls.t >= (ss?.t ?? 0) ? ls.s : (ss?.s ?? 0),
         t: Math.max(ls.t, ss?.t ?? 0),
+        i: ss?.i ?? ls.i ?? 1,
+        r: ss?.r ?? ls.r ?? Date.now() + DAY_MS,
       };
     }
   }
@@ -164,6 +199,12 @@ export function mergeServerProgress(serverProg?: Partial<Progress> | null) {
   const merged: Progress = {
     kana: mergedKana,
     vocab: mergedVocab,
+    vocabSrs: { ...(local.vocabSrs ?? {}), ...(srv.vocabSrs ?? {}) },
+    vocabStats: { ...(local.vocabStats ?? {}), ...(srv.vocabStats ?? {}) },
+    kanji: { ...(local.kanji ?? {}), ...(srv.kanji ?? {}) },
+    bunpou: { ...(local.bunpou ?? {}), ...(srv.bunpou ?? {}) },
+    bunpouQuestions: { ...(local.bunpouQuestions ?? {}), ...(srv.bunpouQuestions ?? {}) },
+    kaiwa: Array.isArray(srv.kaiwa) ? srv.kaiwa : (local.kaiwa ?? []),
     // XP, hari aktif, dan jumlah kuis mengikuti angka resmi server saat login.
     xp: typeof srv.xp === 'number' ? srv.xp : 0,
     days: Array.isArray(srv.days) ? srv.days : [],
@@ -181,7 +222,17 @@ function load(): Progress {
     const raw = localStorage.getItem(KEY);
     if (!raw) return { ...empty };
     const parsed = JSON.parse(raw);
-    return { ...empty, ...parsed, vocab: parsed.vocab ?? {} };
+    return {
+      ...empty,
+      ...parsed,
+      vocab: parsed.vocab ?? {},
+      vocabSrs: parsed.vocabSrs ?? {},
+      vocabStats: parsed.vocabStats ?? {},
+      kanji: parsed.kanji ?? {},
+      bunpou: parsed.bunpou ?? {},
+      bunpouQuestions: parsed.bunpouQuestions ?? {},
+      kaiwa: Array.isArray(parsed.kaiwa) ? parsed.kaiwa : [],
+    };
   } catch {
     return { ...empty };
   }
@@ -217,9 +268,11 @@ function saveLocalOnly(next: Progress) {
 
 export function recordAnswer(char: string, given: string, mode: string, localCorrect: boolean) {
   const prev = state.kana[char] ?? { c: 0, w: 0, s: 0, t: 0 };
+  const now = Date.now();
+  const nextI = localCorrect ? (prev.i || 1) * 2 : 1;
   const stat: KanaStat = localCorrect
-    ? { c: prev.c + 1, w: prev.w, s: prev.s + 1, t: Date.now() }
-    : { c: prev.c, w: prev.w + 1, s: 0, t: Date.now() };
+    ? { c: prev.c + 1, w: prev.w, s: prev.s + 1, t: now, i: nextI, r: now + nextI * DAY_MS }
+    : { c: prev.c, w: prev.w + 1, s: 0, t: now, i: 1, r: now + DAY_MS };
   const d = today();
   saveLocalOnly({
     ...state,
@@ -232,7 +285,9 @@ export function recordAnswer(char: string, given: string, mode: string, localCor
 
 export type QuizFinishPayload =
   | { quizType?: 'kana'; answers: Array<{ char: string; given: string; mode?: string }> }
-  | { quizType: 'vocab'; answers: Array<{ id: string; givenId: string }> };
+  | { quizType: 'vocab'; answers: Array<{ id: string; givenId: string }> }
+  | { quizType: 'mixed'; answers: Array<{ kind: 'kana'; char: string; given: string; mode?: string } | { kind: 'vocab'; id: string; givenId: string }> }
+  | { quizType: 'kanji'; answers: Array<{ char: string; given: string; mode: string }> };
 
 export function finishQuiz(localBonusXp: number, payload: QuizFinishPayload) {
   saveLocalOnly({ ...state, quizzes: state.quizzes + 1, xp: state.xp + localBonusXp });
@@ -243,10 +298,14 @@ export function toggleVocab(id: string) {
   const prev = state.vocab ?? {};
   const nextVal = !prev[id];
   const firstTime = nextVal && !(id in prev);
+  const nextSrs = { ...(state.vocabSrs ?? {}) };
+  if (nextVal) nextSrs[id] = { i: 1, r: Date.now() + DAY_MS };
+  else delete nextSrs[id];
   const d = today();
   saveLocalOnly({
     ...state,
     vocab: { ...prev, [id]: nextVal },
+    vocabSrs: nextSrs,
     xp: state.xp + (firstTime ? 5 : 0),
     days: nextVal && !state.days.includes(d) ? [...state.days, d] : state.days,
   });
@@ -256,14 +315,94 @@ export function toggleVocab(id: string) {
 export function markVocab(id: string, known: boolean) {
   const prev = state.vocab ?? {};
   const firstTime = known && !(id in prev);
+  const nextSrs = { ...(state.vocabSrs ?? {}) };
+  if (known) nextSrs[id] = { i: 1, r: Date.now() + DAY_MS };
+  else delete nextSrs[id];
   const d = today();
   saveLocalOnly({
     ...state,
     vocab: { ...prev, [id]: known },
+    vocabSrs: nextSrs,
     xp: state.xp + (firstTime ? 5 : 0),
     days: known && !state.days.includes(d) ? [...state.days, d] : state.days,
   });
   void recordPracticeOnServer({ type: 'vocab_mark', id, known });
+}
+
+export function recordKanjiAnswer(char: string, given: string, mode: string, localCorrect: boolean) {
+  const prevMap = state.kanji ?? {};
+  const prev = prevMap[char] ?? { c: 0, w: 0, s: 0, t: 0, i: 1, r: 0 };
+  const now = Date.now();
+  const nextI = localCorrect ? (prev.i || 1) * 2 : 1;
+  const stat: KanjiStat = localCorrect
+    ? { c: prev.c + 1, w: prev.w, s: prev.s + 1, t: now, i: nextI, r: now + nextI * DAY_MS }
+    : { c: prev.c, w: prev.w + 1, s: 0, t: now, i: 1, r: now + DAY_MS };
+  const d = today();
+  saveLocalOnly({
+    ...state,
+    kanji: { ...prevMap, [char]: stat },
+    xp: state.xp + (localCorrect ? 10 : 1),
+    days: state.days.includes(d) ? state.days : [...state.days, d],
+  });
+  void recordPracticeOnServer({ type: 'kanji_answer', char, given, mode });
+}
+
+export function recordBunpouAnswer(topicId: string, questionId: string, given: string, localCorrect: boolean) {
+  const prevTopic = state.bunpou?.[topicId] ?? { c: 0, w: 0 };
+  const prevQ = state.bunpouQuestions?.[questionId] ?? { c: 0, w: 0 };
+  const d = today();
+  saveLocalOnly({
+    ...state,
+    bunpou: {
+      ...(state.bunpou ?? {}),
+      [topicId]: localCorrect
+        ? { c: prevTopic.c + 1, w: prevTopic.w }
+        : { c: prevTopic.c, w: prevTopic.w + 1 },
+    },
+    bunpouQuestions: {
+      ...(state.bunpouQuestions ?? {}),
+      [questionId]: localCorrect
+        ? { c: prevQ.c + 1, w: prevQ.w }
+        : { c: prevQ.c, w: prevQ.w + 1 },
+    },
+    xp: state.xp + (localCorrect ? 10 : 1),
+    days: state.days.includes(d) ? state.days : [...state.days, d],
+  });
+  void recordPracticeOnServer({ type: 'bunpou_answer', questionId, given });
+}
+
+export async function completeKaiwa(id: string): Promise<{ ok: boolean; error?: string }> {
+  const prev = Array.isArray(state.kaiwa) ? state.kaiwa : [];
+  if (prev.includes(id)) {
+    return { ok: false, error: 'Dialog ini sudah pernah ditandai selesai.' };
+  }
+  if (!cloudSyncEnabled) {
+    const d = today();
+    saveLocalOnly({
+      ...state,
+      kaiwa: [...prev, id],
+      xp: state.xp + 5,
+      days: state.days.includes(d) ? state.days : [...state.days, d],
+    });
+    return { ok: true };
+  }
+  return recordPracticeOnServer({ type: 'kaiwa_complete', id });
+}
+
+export function dueToday(prog: Progress = state, now = Date.now()): { kana: string[]; vocab: string[]; total: number } {
+  const kana: string[] = [];
+  for (const [ch, st] of Object.entries(prog.kana ?? {})) {
+    if (st && typeof st.r === 'number' && st.r <= now) {
+      kana.push(ch);
+    }
+  }
+  const vocab: string[] = [];
+  for (const [id, srs] of Object.entries(prog.vocabSrs ?? {})) {
+    if (prog.vocab?.[id] !== false && srs && typeof srs.r === 'number' && srs.r <= now) {
+      vocab.push(id);
+    }
+  }
+  return { kana, vocab, total: kana.length + vocab.length };
 }
 
 export function setName(name: string) {
