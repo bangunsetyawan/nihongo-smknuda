@@ -448,6 +448,42 @@ app.get('/api/tts', async (req, res) => {
   }
 });
 
+app.get('/api/translate', async (req, res) => {
+  const q = String(req.query.q ?? '').trim();
+  if (!q || q.length > 220) {
+    res.status(400).json({ error: 'Teks harus diisi (maksimal 220 karakter).' });
+    return;
+  }
+  const key = crypto.createHash('sha256').update(q.toLowerCase()).digest('hex');
+  const cached = db
+    .prepare('SELECT source_text, jp_text, romaji FROM translations_cache WHERE q_hash = ?')
+    .get(key) as { source_text: string; jp_text: string; romaji: string } | undefined;
+  if (cached) {
+    res.json({ source: q, jp: cached.jp_text, romaji: cached.romaji });
+    return;
+  }
+
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=id&tl=ja&dt=t&dt=rm&q=${encodeURIComponent(q)}`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) throw new Error('Translate upstream error');
+    const data = (await r.json()) as [Array<[string | null, string | null, string | null]>];
+    const segments = Array.isArray(data?.[0]) ? data[0] : [];
+    const jp = segments.map((s) => s?.[0] ?? '').join('').trim();
+    const romaji = segments.map((s) => s?.[2] ?? '').filter(Boolean).join(' ').trim();
+    if (!jp) throw new Error('Empty translation');
+
+    db.prepare(
+      'INSERT OR REPLACE INTO translations_cache (q_hash, source_text, jp_text, romaji) VALUES (?, ?, ?, ?)'
+    ).run(key, q, jp, romaji);
+
+    res.json({ source: q, jp, romaji });
+  } catch (err) {
+    console.error('Translate error:', err);
+    res.status(502).json({ error: 'Gagal menerjemahkan teks. Coba lagi sebentar.' });
+  }
+});
+
 app.get('/api/leaderboard', (_req, res) => {
   const rows = db
     .prepare(

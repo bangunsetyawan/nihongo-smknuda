@@ -37,6 +37,14 @@ db.exec(`
     streak INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS translations_cache (
+    q_hash TEXT PRIMARY KEY,
+    source_text TEXT NOT NULL,
+    jp_text TEXT NOT NULL,
+    romaji TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
 export interface UserRow {
