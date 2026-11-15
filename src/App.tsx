@@ -10,6 +10,9 @@ import Resources from './pages/Resources';
 import LoginPage from './pages/LoginPage';
 import CompleteProfilePage from './pages/CompleteProfilePage';
 import { PrivacyPage, TermsPage } from './pages/LegalPage';
+import TtsPage from './pages/TtsPage';
+import LeaderboardPage from './pages/LeaderboardPage';
+import TeacherPage from './pages/TeacherPage';
 import { initAuth, logout, useAuth } from './lib/auth';
 
 const NAV = [
@@ -35,7 +38,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="topbar">
+      <header className="topbar no-print">
         <Link to="/" className="brand">
           <img src="/logo-smk.png" alt="Logo SMKN NU Darussalam" className="brand-img" />
           <span className="brand-text">
@@ -50,9 +53,11 @@ export default function App() {
             {NAV.map((n) => (
               <NavLink key={n.to} to={n.to} end={n.end}>{n.label}</NavLink>
             ))}
+            <NavLink to="/suara">Suara</NavLink>
+            <NavLink to="/peringkat">Peringkat</NavLink>
             <NavLink to="/panduan">Panduan</NavLink>
             <NavLink to="/jalur">Jalur N4</NavLink>
-            <NavLink to="/sumber">Sumber</NavLink>
+            {user?.role === 'teacher' && <NavLink to="/rekap">Rekap Guru</NavLink>}
           </nav>
           {!loading && (
             user ? (
@@ -88,13 +93,16 @@ export default function App() {
           <Route path="/sumber" element={<Resources />} />
           <Route path="/masuk" element={<LoginPage />} />
           <Route path="/lengkapi-profil" element={<CompleteProfilePage />} />
+          <Route path="/suara" element={<TtsPage />} />
+          <Route path="/peringkat" element={<LeaderboardPage />} />
+          <Route path="/rekap" element={<TeacherPage />} />
           <Route path="/privasi" element={<PrivacyPage />} />
           <Route path="/ketentuan" element={<TermsPage />} />
           <Route path="*" element={<div className="page narrow"><h1>Halaman tidak ditemukan</h1><Link to="/" className="btn primary">Kembali ke beranda</Link></div>} />
         </Routes>
       </main>
 
-      <footer className="footer">
+      <footer className="footer no-print">
         <div className="footer-brand">
           <img src="/logo-smk.png" alt="Logo SMKN NU Darussalam" />
           <strong>Nihongo SMKN NU Darussalam</strong>
@@ -104,7 +112,7 @@ export default function App() {
         <div className="muted small">がんばって！ Semangat belajar!</div>
       </footer>
 
-      <nav className="bottomnav">
+      <nav className="bottomnav no-print">
         {NAV.map((n) => (
           <NavLink key={n.to} to={n.to} end={n.end}>
             <span className={`bn-icon ${/^[\u3040-\u30ff\u4e00-\u9fff]/.test(n.icon) ? 'jp' : ''}`}>{n.icon}</span>

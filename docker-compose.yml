@@ -11,6 +11,7 @@ services:
       APP_URL: "${APP_URL:-https://japan.smknuda.qzz.io}"
       GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-}"
       GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:-}"
+      TEACHER_EMAILS: "${TEACHER_EMAILS:-bangun164@gmail.com,siakanuda@gmail.com}"
     volumes:
       - nihongo_data:/data
 

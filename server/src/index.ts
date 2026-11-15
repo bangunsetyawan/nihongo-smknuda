@@ -1,18 +1,28 @@
 import crypto from 'node:crypto';
+import { execFile } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { promisify } from 'node:util';
 import bcrypt from 'bcryptjs';
 import cookieParser from 'cookie-parser';
 import express from 'express';
 import {
   clearSessionCookie,
   getGoogleConfig,
+  getTeacherEmails,
   isRequestSecure,
   readSessionUser,
   requireAuth,
+  requireTeacher,
   setSessionCookie,
   signSession,
   type AuthRequest,
 } from './auth.js';
 import { db, toPublicUser, type UserRow } from './db.js';
+
+const execFileAsync = promisify(execFile);
+const TTS_CACHE_DIR = process.env.TTS_CACHE_DIR || '/data/tts-cache';
+fs.mkdirSync(TTS_CACHE_DIR, { recursive: true });
 
 const app = express();
 app.set('trust proxy', 1);
@@ -38,7 +48,7 @@ function summarizeProgress(data: ProgressPayload) {
   let hiraganaMastered = 0;
   let katakanaMastered = 0;
   for (const [ch, st] of kanaEntries) {
-    const ok = (st?.s ?? 0) >= 3 || ((st?.c ?? 0) >= 4 && (st?.c ?? 0) >= (st?.w ?? 0) * 2);
+    const ok = (st?.s ?? 0) >= 5;
     if (!ok) continue;
     const code = ch.codePointAt(0) ?? 0;
     if (code >= 0x3040 && code <= 0x309f) hiraganaMastered++;
@@ -137,12 +147,13 @@ app.post('/api/auth/register', async (req, res) => {
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
+  const role = getTeacherEmails().has(email) ? 'teacher' : 'student';
   const info = db
     .prepare(
-      `INSERT INTO users (email, password_hash, full_name, nickname, kelas, jurusan, japanese_name, profile_completed)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1)`
+      `INSERT INTO users (email, password_hash, full_name, nickname, kelas, jurusan, japanese_name, role, profile_completed)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`
     )
-    .run(email, passwordHash, fullName, nickname, kelas, jurusan, japaneseName);
+    .run(email, passwordHash, fullName, nickname, kelas, jurusan, japaneseName, role);
 
   const userId = Number(info.lastInsertRowid);
   const progress = getOrCreateProgress(userId);
@@ -288,22 +299,25 @@ app.get('/api/auth/google/callback', async (req, res) => {
     if (!user) {
       const fullName = (g.name ?? '').trim();
       const nickname = fullName.split(' ')[0] || email.split('@')[0];
+      const role = getTeacherEmails().has(email) ? 'teacher' : 'student';
       const info = db
         .prepare(
-          `INSERT INTO users (email, google_id, avatar_url, full_name, nickname, profile_completed)
-           VALUES (?, ?, ?, ?, ?, 0)`
+          `INSERT INTO users (email, google_id, avatar_url, full_name, nickname, role, profile_completed)
+           VALUES (?, ?, ?, ?, ?, ?, 0)`
         )
-        .run(email, googleId, g.picture ?? null, fullName, nickname);
+        .run(email, googleId, g.picture ?? null, fullName, nickname, role);
       user = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(info.lastInsertRowid)) as UserRow;
       getOrCreateProgress(user.id);
     } else {
+      const autoTeacher = getTeacherEmails().has(email) ? 'teacher' : user.role;
       db.prepare(
         `UPDATE users
          SET google_id = COALESCE(google_id, ?),
              avatar_url = COALESCE(?, avatar_url),
+             role = ?,
              last_login_at = datetime('now')
          WHERE id = ?`
-      ).run(googleId, g.picture ?? null, user.id);
+      ).run(googleId, g.picture ?? null, autoTeacher, user.id);
       user = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id) as UserRow;
     }
 
@@ -388,6 +402,176 @@ app.put('/api/progress', requireAuth, (req: AuthRequest, res) => {
 
   res.json({ ok: true, summary: sum });
 });
+
+app.post('/api/profile/password', requireAuth, async (req: AuthRequest, res) => {
+  const password = String(req.body?.password ?? '');
+  if (password.length < 6) {
+    res.status(400).json({ error: 'Password minimal 6 karakter.' });
+    return;
+  }
+  const hash = await bcrypt.hash(password, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.user!.id);
+  res.json({ ok: true });
+});
+
+app.get('/api/tts', async (req, res) => {
+  const text = String(req.query.text ?? '').trim();
+  if (!text || text.length > 220) {
+    res.status(400).json({ error: 'Teks harus diisi (maksimal 220 karakter).' });
+    return;
+  }
+  const voice = req.query.voice === 'male' ? 'ja-JP-KeitaNeural' : 'ja-JP-NanamiNeural';
+  const rate = req.query.rate === 'slow' ? '-25%' : '+0%';
+  const key = crypto.createHash('sha256').update(`${voice}|${rate}|${text}`).digest('hex');
+  const filePath = path.join(TTS_CACHE_DIR, `${key}.mp3`);
+
+  try {
+    if (!fs.existsSync(filePath)) {
+      const tmpPath = path.join(TTS_CACHE_DIR, `${key}.${process.pid}.${Date.now()}.tmp.mp3`);
+      await execFileAsync('edge-tts', [
+        '--text',
+        text,
+        '--voice',
+        voice,
+        `--rate=${rate}`,
+        '--write-media',
+        tmpPath,
+      ], { timeout: 15000 });
+      fs.renameSync(tmpPath, filePath);
+    }
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    fs.createReadStream(filePath).pipe(res);
+  } catch (err) {
+    console.error('TTS error:', err);
+    res.status(502).json({ error: 'Gagal menghasilkan audio TTS.' });
+  }
+});
+
+app.get('/api/leaderboard', (_req, res) => {
+  const rows = db
+    .prepare(
+      `SELECT u.id, u.nickname, u.japanese_name, u.kelas, u.jurusan, u.avatar_url, u.role,
+              COALESCE(p.xp, 0) AS xp,
+              COALESCE(p.streak, 0) AS streak,
+              COALESCE(p.hiragana_mastered, 0) AS hiragana_mastered,
+              COALESCE(p.katakana_mastered, 0) AS katakana_mastered,
+              COALESCE(p.vocab_mastered, 0) AS vocab_mastered
+       FROM users u
+       LEFT JOIN user_progress p ON p.user_id = u.id
+       WHERE u.profile_completed = 1
+       ORDER BY xp DESC, streak DESC, hiragana_mastered DESC, u.id ASC
+       LIMIT 100`
+    )
+    .all() as Array<{
+    id: number;
+    nickname: string;
+    japanese_name: string;
+    kelas: string;
+    jurusan: string;
+    avatar_url: string | null;
+    role: string;
+    xp: number;
+    streak: number;
+    hiragana_mastered: number;
+    katakana_mastered: number;
+    vocab_mastered: number;
+  }>;
+
+  res.json({
+    entries: rows.map((r) => ({
+      id: r.id,
+      nickname: r.nickname,
+      japaneseName: r.japanese_name,
+      kelas: r.kelas,
+      jurusan: r.jurusan,
+      avatarUrl: r.avatar_url,
+      role: r.role,
+      xp: r.xp,
+      streak: r.streak,
+      hiraganaMastered: r.hiragana_mastered,
+      katakanaMastered: r.katakana_mastered,
+      vocabMastered: r.vocab_mastered,
+    })),
+  });
+});
+
+app.get('/api/teacher/students', requireAuth, requireTeacher, (_req: AuthRequest, res) => {
+  const rows = db
+    .prepare(
+      `SELECT u.id, u.email, u.full_name, u.nickname, u.japanese_name, u.kelas, u.jurusan,
+              u.role, u.profile_completed, u.created_at, u.last_login_at,
+              COALESCE(p.xp, 0) AS xp,
+              COALESCE(p.streak, 0) AS streak,
+              COALESCE(p.hiragana_mastered, 0) AS hiragana_mastered,
+              COALESCE(p.katakana_mastered, 0) AS katakana_mastered,
+              COALESCE(p.vocab_mastered, 0) AS vocab_mastered,
+              p.updated_at AS progress_updated_at
+       FROM users u
+       LEFT JOIN user_progress p ON p.user_id = u.id
+       ORDER BY u.role DESC, xp DESC, u.full_name ASC`
+    )
+    .all() as Array<{
+    id: number;
+    email: string;
+    full_name: string;
+    nickname: string;
+    japanese_name: string;
+    kelas: string;
+    jurusan: string;
+    role: string;
+    profile_completed: number;
+    created_at: string;
+    last_login_at: string;
+    xp: number;
+    streak: number;
+    hiragana_mastered: number;
+    katakana_mastered: number;
+    vocab_mastered: number;
+    progress_updated_at: string | null;
+  }>;
+
+  res.json({
+    students: rows.map((r) => ({
+      id: r.id,
+      email: r.email,
+      fullName: r.full_name,
+      nickname: r.nickname,
+      japaneseName: r.japanese_name,
+      kelas: r.kelas,
+      jurusan: r.jurusan,
+      role: r.role,
+      profileCompleted: r.profile_completed === 1,
+      createdAt: r.created_at,
+      lastLoginAt: r.last_login_at,
+      xp: r.xp,
+      streak: r.streak,
+      hiraganaMastered: r.hiragana_mastered,
+      katakanaMastered: r.katakana_mastered,
+      vocabMastered: r.vocab_mastered,
+      progressUpdatedAt: r.progress_updated_at,
+    })),
+  });
+});
+
+app.patch('/api/teacher/students/:id/role', requireAuth, requireTeacher, (req: AuthRequest, res) => {
+  const id = Number(req.params.id);
+  const role = req.body?.role === 'teacher' ? 'teacher' : req.body?.role === 'student' ? 'student' : null;
+  if (!id || !role) {
+    res.status(400).json({ error: 'ID atau role tidak valid.' });
+    return;
+  }
+  if (id === req.user!.id && role !== 'teacher') {
+    res.status(400).json({ error: 'Tidak dapat menurunkan role akun sendiri.' });
+    return;
+  }
+  db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);
+  res.json({ ok: true, id, role });
+});
+
+for (const email of getTeacherEmails()) {
+  db.prepare("UPDATE users SET role = 'teacher' WHERE email = ?").run(email);
+}
 
 const port = Number(process.env.PORT || 3000);
 app.listen(port, () => {

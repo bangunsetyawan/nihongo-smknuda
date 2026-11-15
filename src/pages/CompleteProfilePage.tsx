@@ -15,6 +15,9 @@ export default function CompleteProfilePage() {
   const [japaneseName, setJapaneseName] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [pwMsg, setPwMsg] = useState('');
+  const [pwBusy, setPwBusy] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -138,6 +141,53 @@ export default function CompleteProfilePage() {
             )}
           </div>
         </form>
+
+        {user.profileCompleted && (
+          <form
+            className="auth-form"
+            style={{ marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px solid var(--line)' }}
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setPwMsg('');
+              setPwBusy(true);
+              try {
+                const res = await fetch('/api/profile/password', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'include',
+                  body: JSON.stringify({ password: newPassword }),
+                });
+                const d = (await res.json()) as { ok?: boolean; error?: string };
+                if (!res.ok) throw new Error(d.error || 'Gagal menyimpan password.');
+                setNewPassword('');
+                setPwMsg('✔ Password berhasil disimpan. Sekarang Anda juga bisa login manual dengan email.');
+              } catch (e2) {
+                setPwMsg(e2 instanceof Error ? e2.message : 'Gagal menyimpan password.');
+              } finally {
+                setPwBusy(false);
+              }
+            }}
+          >
+            <label className="field">
+              <span>Atur / Ubah Password Login Manual (opsional)</span>
+              <input
+                className="input"
+                type="password"
+                minLength={6}
+                required
+                placeholder="Minimal 6 karakter"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+            </label>
+            <div className="row gap-s wrap">
+              <button className="btn small" type="submit" disabled={pwBusy}>
+                {pwBusy ? 'Menyimpan…' : 'Simpan Password'}
+              </button>
+              {pwMsg && <span className="small muted">{pwMsg}</span>}
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );

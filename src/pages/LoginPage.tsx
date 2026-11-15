@@ -97,7 +97,7 @@ export default function LoginPage() {
           {googleEnabled ? (
             <a href="/api/auth/google" className="btn google-btn">
               <GoogleIcon />
-              <span>Masuk dengan Google</span>
+              <span>{mode === 'register' ? 'Daftar dengan Google' : 'Masuk dengan Google'}</span>
             </a>
           ) : (
             <button
@@ -106,7 +106,7 @@ export default function LoginPage() {
               onClick={() => setErr(ERROR_MSG.google_not_configured)}
             >
               <GoogleIcon />
-              <span>Masuk dengan Google</span>
+              <span>{mode === 'register' ? 'Daftar dengan Google' : 'Masuk dengan Google'}</span>
             </button>
           )}
         </div>

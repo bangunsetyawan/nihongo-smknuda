@@ -56,6 +56,24 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   next();
 }
 
+export function requireTeacher(req: AuthRequest, res: Response, next: NextFunction) {
+  if (!req.user || req.user.role !== 'teacher') {
+    res.status(403).json({ error: 'Halaman ini khusus untuk guru / pembina.' });
+    return;
+  }
+  next();
+}
+
+export function getTeacherEmails(): Set<string> {
+  const raw = process.env.TEACHER_EMAILS || 'bangun164@gmail.com,siakanuda@gmail.com';
+  return new Set(
+    raw
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
 export function getGoogleConfig() {
   const clientId = (process.env.GOOGLE_CLIENT_ID || '').trim();
   const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();

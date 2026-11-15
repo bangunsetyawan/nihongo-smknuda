@@ -485,3 +485,51 @@ main { flex: 1; }
   font-size: .9rem;
 }
 .dash-milestone .bar { background: rgba(255, 255, 255, .2); margin: .45rem 0 0; }
+
+/* ---------- TTS, Leaderboard, Rekap Guru ---------- */
+.tts-card { display: flex; flex-direction: column; gap: 1rem; padding: 1.35rem; }
+.tts-textarea { resize: vertical; min-height: 84px; line-height: 1.5; }
+.tts-controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .65rem; }
+.small-select { padding: .4rem .65rem; font-size: .85rem; }
+.tts-output {
+  background: #fbf7f2; border: 1.5px solid var(--line); border-radius: 14px;
+  padding: 1.15rem; min-height: 92px; display: flex; flex-direction: column; justify-content: center; gap: .35rem;
+}
+.tts-jp { font-size: clamp(1.4rem, 4.5vw, 2.1rem); font-weight: 700; line-height: 1.35; word-break: break-word; }
+.tts-romaji { font-size: 1rem; font-weight: 700; color: var(--sakura); }
+
+.lb-list { display: flex; flex-direction: column; gap: .7rem; }
+.lb-item {
+  display: grid; grid-template-columns: 2.6rem 2.6rem 1fr auto; align-items: center; gap: .85rem;
+  padding: .9rem 1.1rem;
+}
+.lb-me { border-color: var(--ink); background: #fffdf9; }
+.lb-rank { font-size: 1.25rem; font-weight: 800; text-align: center; }
+.lb-avatar { width: 2.5rem; height: 2.5rem; border-radius: 50%; object-fit: cover; }
+.lb-avatar-fallback { background: var(--ink); color: #fff; display: grid; place-items: center; font-weight: 800; }
+.lb-info { min-width: 0; }
+.lb-metrics { text-align: right; }
+.lb-xp { font-weight: 800; font-size: 1.05rem; color: var(--ink); }
+@media (max-width: 640px) {
+  .lb-item { grid-template-columns: 2.1rem 2.2rem 1fr; }
+  .lb-metrics { grid-column: 1 / -1; text-align: left; padding-left: 2.9rem; }
+}
+
+.teacher-filters { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: .65rem; margin-bottom: 1rem; }
+@media (max-width: 700px) { .teacher-filters { grid-template-columns: 1fr; } }
+.table-wrap { overflow-x: auto; padding: 0; }
+.rekap-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.rekap-table th, .rekap-table td { padding: .75rem .9rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+.rekap-table th { background: #fbf7f2; font-weight: 800; white-space: nowrap; }
+
+.print-header, .print-sign { display: none; }
+@media print {
+  body { background: #fff !important; color: #000; }
+  .no-print { display: none !important; }
+  .page { max-width: 100%; padding: 0; }
+  .card { box-shadow: none; border: 1px solid #ccc; }
+  .print-header { display: block; text-align: center; margin-bottom: 1.25rem; border-bottom: 2px solid #000; padding-bottom: .75rem; }
+  .print-header h2, .print-header p { margin: .15rem 0; }
+  .print-sign { display: flex; justify-content: flex-end; margin-top: 2rem; text-align: center; }
+  .rekap-table th, .rekap-table td { padding: .45rem .55rem; font-size: 11pt; }
+}

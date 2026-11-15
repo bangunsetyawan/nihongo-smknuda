@@ -172,6 +172,33 @@ export default function Home() {
         </Link>
       </section>
 
+      <h2>Fitur &amp; Pemantauan</h2>
+      <section className="steps">
+        <Link to="/suara" className="card step">
+          <div className="step-n">🔊</div>
+          <div>
+            <h3>Ketik &amp; Suarakan <span className="jp muted">はつおん</span></h3>
+            <p className="muted">Ketik kata/kalimat Romaji atau Jepang, dengar pelafalan jernih.</p>
+          </div>
+        </Link>
+        <Link to="/peringkat" className="card step">
+          <div className="step-n">🏆</div>
+          <div>
+            <h3>Papan Peringkat <span className="jp muted">ランキング</span></h3>
+            <p className="muted">Lihat peringkat XP, streak, dan progres teman-teman.</p>
+          </div>
+        </Link>
+        {user?.role === 'teacher' && (
+          <Link to="/rekap" className="card step">
+            <div className="step-n">📊</div>
+            <div>
+              <h3>Rekap &amp; Laporan Guru <span className="jp muted">レポート</span></h3>
+              <p className="muted">Pantau seluruh siswa, unduh Excel (CSV) atau cetak PDF.</p>
+            </div>
+          </Link>
+        )}
+      </section>
+
       <h2>Mulai dari mana?</h2>
       <section className="steps">
         <Step n={1} title="Hiragana" jp="ひらがな" to="/hiragana" desc="46 huruf dasar + variasinya. Target: 1–2 minggu." done={mh >= hira.length * 0.6} />
