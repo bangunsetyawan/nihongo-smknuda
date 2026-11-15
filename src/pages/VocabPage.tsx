@@ -230,6 +230,7 @@ interface VocabQ {
 
 interface VocabAns {
   item: VocabItem;
+  givenId: string;
   correct: boolean;
 }
 
@@ -287,7 +288,7 @@ function VocabQuiz({ items }: { items: VocabItem[] }) {
     pickedRef.current = opt.id;
     setPicked(opt.id);
     markVocab(q.item.id, isRight);
-    setAnswers((a) => [...a, { item: q.item, correct: isRight }]);
+    setAnswers((a) => [...a, { item: q.item, givenId: opt.id, correct: isRight }]);
     if (isRight) {
       setTimeout(() => {
         if (pickedRef.current !== null) next();
@@ -298,7 +299,10 @@ function VocabQuiz({ items }: { items: VocabItem[] }) {
   useEffect(() => {
     if (done && answers.length) {
       const right = answers.filter((a) => a.correct).length;
-      finishQuiz(right === answers.length ? 50 : 10, right, answers.length);
+      finishQuiz(right === answers.length ? 50 : 10, {
+        quizType: 'vocab',
+        answers: answers.map((a) => ({ id: a.item.id, givenId: a.givenId })),
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [done]);

@@ -198,6 +198,7 @@ main { flex: 1; }
 .hero .btn:not(.primary):hover { background: rgba(255, 255, 255, .2); }
 .hero .btn.primary { background: #fff; color: var(--ink); border-color: #fff; box-shadow: 0 3px 0 #b9bfdc; }
 .hero .sync-note.ok { color: #a7f3d0; }
+.hero .sync-note.warn { color: #fde68a; }
 .hero .sync-note a { color: #fff; text-decoration: underline; }
 .hero-art { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .75rem; }
 .hero-art-sub { color: rgba(255, 255, 255, .75); font-size: .85rem; letter-spacing: .1em; }
@@ -454,6 +455,7 @@ main { flex: 1; }
 
 .sync-note { margin: .85rem 0 0; font-size: .88rem; }
 .sync-note.ok { color: var(--ok); font-weight: 600; }
+.sync-note.warn { color: #b45309; font-weight: 600; }
 
 .auth-card { max-width: 500px; margin: 1rem auto; padding: 1.5rem; }
 .auth-head { margin-bottom: 1.1rem; }

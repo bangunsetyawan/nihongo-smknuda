@@ -17,16 +17,46 @@ export interface Progress {
   name?: string;
 }
 
+export type SyncStatus = 'synced' | 'syncing' | 'pending' | 'offline';
+
 const KEY = 'nihongo-smk:v1';
 const empty: Progress = { kana: {}, vocab: {}, xp: 0, days: [], quizzes: 0 };
 
 let state: Progress = load();
 const subs = new Set<() => void>();
+const syncSubs = new Set<() => void>();
 let cloudSyncEnabled = false;
 let syncTimer: number | undefined;
 let pendingSync = false;
+let syncInFlight = false;
+
+function getSyncSnapshot(): SyncStatus {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return 'offline';
+  if (syncInFlight) return 'syncing';
+  if (pendingSync) return 'pending';
+  return 'synced';
+}
+
+let cachedSyncStatus: SyncStatus = getSyncSnapshot();
+
+function notifySync() {
+  const next = getSyncSnapshot();
+  if (next !== cachedSyncStatus) {
+    cachedSyncStatus = next;
+    syncSubs.forEach((f) => f());
+  }
+}
+
+export function useSyncStatus(): SyncStatus {
+  return useSyncExternalStore(
+    (cb) => { syncSubs.add(cb); return () => syncSubs.delete(cb); },
+    () => cachedSyncStatus,
+  );
+}
 
 async function pushToServer(snapshot: Progress) {
+  syncInFlight = true;
+  notifySync();
   try {
     const res = await fetch('/api/progress', {
       method: 'PUT',
@@ -34,16 +64,19 @@ async function pushToServer(snapshot: Progress) {
       credentials: 'include',
       body: JSON.stringify(snapshot),
     });
-    if (res.ok) pendingSync = false;
-    else pendingSync = true;
+    pendingSync = !res.ok;
   } catch {
     pendingSync = true;
+  } finally {
+    syncInFlight = false;
+    notifySync();
   }
 }
 
 function scheduleSync() {
   if (!cloudSyncEnabled) return;
   pendingSync = true;
+  notifySync();
   if (syncTimer) window.clearTimeout(syncTimer);
   syncTimer = window.setTimeout(() => {
     void pushToServer(state);
@@ -51,19 +84,32 @@ function scheduleSync() {
 }
 
 window.addEventListener('online', () => {
+  notifySync();
   if (cloudSyncEnabled && pendingSync) void pushToServer(state);
+});
+
+window.addEventListener('offline', () => {
+  notifySync();
 });
 
 export function setCloudSync(enabled: boolean) {
   cloudSyncEnabled = enabled;
-  if (!enabled && syncTimer) {
-    window.clearTimeout(syncTimer);
-    syncTimer = undefined;
+  if (!enabled) {
+    if (syncTimer) {
+      window.clearTimeout(syncTimer);
+      syncTimer = undefined;
+    }
+    pendingSync = false;
+    syncInFlight = false;
   }
+  notifySync();
 }
 
 async function recordPracticeOnServer(payload: Record<string, unknown>) {
   if (!cloudSyncEnabled) return;
+  pendingSync = true;
+  syncInFlight = true;
+  notifySync();
   try {
     const res = await fetch('/api/practice/record', {
       method: 'POST',
@@ -72,7 +118,11 @@ async function recordPracticeOnServer(payload: Record<string, unknown>) {
       keepalive: true,
       body: JSON.stringify(payload),
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      pendingSync = true;
+      return;
+    }
+    pendingSync = false;
     const data = (await res.json()) as { progress?: Progress };
     if (data.progress) {
       state = {
@@ -85,7 +135,10 @@ async function recordPracticeOnServer(payload: Record<string, unknown>) {
       subs.forEach((f) => f());
     }
   } catch {
-    // Abaikan jika offline sementara
+    pendingSync = true;
+  } finally {
+    syncInFlight = false;
+    notifySync();
   }
 }
 
@@ -153,8 +206,7 @@ export function useProgress(): Progress {
 }
 
 export function today() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
 }
 
 function saveLocalOnly(next: Progress) {
@@ -163,24 +215,28 @@ function saveLocalOnly(next: Progress) {
   subs.forEach((f) => f());
 }
 
-export function recordAnswer(char: string, correct: boolean) {
+export function recordAnswer(char: string, given: string, mode: string, localCorrect: boolean) {
   const prev = state.kana[char] ?? { c: 0, w: 0, s: 0, t: 0 };
-  const stat: KanaStat = correct
+  const stat: KanaStat = localCorrect
     ? { c: prev.c + 1, w: prev.w, s: prev.s + 1, t: Date.now() }
     : { c: prev.c, w: prev.w + 1, s: 0, t: Date.now() };
   const d = today();
   saveLocalOnly({
     ...state,
     kana: { ...state.kana, [char]: stat },
-    xp: state.xp + (correct ? 10 : 1),
+    xp: state.xp + (localCorrect ? 10 : 1),
     days: state.days.includes(d) ? state.days : [...state.days, d],
   });
-  void recordPracticeOnServer({ type: 'kana_answer', char, correct });
+  void recordPracticeOnServer({ type: 'kana_answer', char, given, mode });
 }
 
-export function finishQuiz(bonusXp: number, correctCount = 0, totalCount = 1) {
-  saveLocalOnly({ ...state, quizzes: state.quizzes + 1, xp: state.xp + bonusXp });
-  void recordPracticeOnServer({ type: 'quiz_finish', correctCount, totalCount });
+export type QuizFinishPayload =
+  | { quizType?: 'kana'; answers: Array<{ char: string; given: string; mode?: string }> }
+  | { quizType: 'vocab'; answers: Array<{ id: string; givenId: string }> };
+
+export function finishQuiz(localBonusXp: number, payload: QuizFinishPayload) {
+  saveLocalOnly({ ...state, quizzes: state.quizzes + 1, xp: state.xp + localBonusXp });
+  void recordPracticeOnServer({ type: 'quiz_finish', ...payload });
 }
 
 export function toggleVocab(id: string) {
@@ -214,18 +270,57 @@ export function setName(name: string) {
   save({ ...state, name });
 }
 
-export function resetProgress() {
-  save({ ...empty });
+export async function resetProgress(): Promise<void> {
+  if (cloudSyncEnabled) {
+    const res = await fetch('/api/progress', {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) throw new Error(data.error || 'Gagal mereset progres di server.');
+  }
+  if (syncTimer) {
+    window.clearTimeout(syncTimer);
+    syncTimer = undefined;
+  }
+  pendingSync = false;
+  syncInFlight = false;
+  try { localStorage.removeItem(KEY); } catch {}
+  saveLocalOnly({ ...empty });
+  notifySync();
 }
 
 export function exportProgress(): string {
   return JSON.stringify(state);
 }
 
-export function importProgress(json: string) {
-  const data = JSON.parse(json);
-  if (typeof data !== 'object' || !data.kana) throw new Error('Format tidak dikenali');
-  save({ ...empty, ...data });
+export async function importProgress(json: string): Promise<void> {
+  const data = JSON.parse(json) as Partial<Progress>;
+  if (!data || typeof data !== 'object' || !data.kana || typeof data.kana !== 'object') {
+    throw new Error('Format tidak dikenali');
+  }
+  if (cloudSyncEnabled) {
+    const res = await fetch('/api/progress/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(data),
+    });
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; progress?: Progress; error?: string };
+    if (!res.ok || !body.progress) {
+      throw new Error(body.error || 'Server menolak data cadangan progres.');
+    }
+    if (syncTimer) {
+      window.clearTimeout(syncTimer);
+      syncTimer = undefined;
+    }
+    pendingSync = false;
+    syncInFlight = false;
+    saveLocalOnly({ ...empty, ...body.progress });
+    notifySync();
+    return;
+  }
+  saveLocalOnly({ ...empty, ...data });
 }
 
 export type Mastery = 0 | 1 | 2 | 3; // 0 belum, 1 lemah, 2 sedang, 3 hafal
@@ -240,14 +335,15 @@ export function mastery(stat?: KanaStat): Mastery {
 export function streak(days: string[]): number {
   const set = new Set(days);
   let n = 0;
-  const d = new Date();
+  const [y, m, day] = today().split('-').map(Number);
+  let cursorMs = Date.UTC(y, m - 1, day);
+  const isoDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
   // Jika hari ini belum belajar, hitung dari kemarin
-  if (!set.has(today())) d.setDate(d.getDate() - 1);
+  if (!set.has(isoDay(cursorMs))) cursorMs -= 86_400_000;
   for (;;) {
-    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    if (!set.has(k)) break;
+    if (!set.has(isoDay(cursorMs))) break;
     n++;
-    d.setDate(d.getDate() - 1);
+    cursorMs -= 86_400_000;
   }
   return n;
 }

@@ -93,6 +93,11 @@ npm run preview     # pratinjau hasil build
 
 🌐 **Publik:** https://japan.smknuda.qzz.io
 
+### Peran Guru / Pembina & Owner
+
+- Akun **Owner** (`OWNER_EMAILS`) dan **Guru / Pembina** (`TEACHER_EMAILS`) dipromosikan secara otomatis saat login Google OAuth terverifikasi maupun saat server API dimulai.
+- **Auto-role hanya menaikkan (promote).** Pencabutan role dilakukan manual oleh Owner lewat halaman **Rekap** — tidak ada penurunan otomatis, supaya perubahan daftar email yang tidak sengaja tidak langsung mencabut akses guru. Guru biasa tidak dapat menurunkan sesama guru atau Owner.
+
 ---
 
 ## Struktur proyek

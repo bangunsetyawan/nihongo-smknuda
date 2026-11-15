@@ -94,7 +94,8 @@ export default function TtsPage() {
       const url = `/api/tts?text=${encodeURIComponent(textToSpeak)}&voice=${voice}&rate=${rate}`;
       const res = await fetch(url, { signal: controller.signal, credentials: 'include' });
       if (res.status === 401) {
-        setErr('Silakan login terlebih dahulu untuk memakai suara server AI.');
+        setErr('Kamu belum login — memakai suara browser. Login untuk suara server yang lebih jernih.');
+        browserSpeak(textToSpeak, rate === 'slow' ? 0.72 : 0.95);
         if (seq === playSeqRef.current) setSpeaking(false);
         return;
       }

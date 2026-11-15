@@ -21,6 +21,8 @@ import {
   type AuthRequest,
 } from './auth.js';
 import { db, toPublicUser, type UserRow } from './db.js';
+import { isKanaAnswerCorrect, KANA_MAP } from './data/kana-romaji.js';
+import { VOCAB_IDS } from './data/vocab-ids.js';
 
 const execFileAsync = promisify(execFile);
 const TTS_CACHE_DIR = process.env.TTS_CACHE_DIR || '/data/tts-cache';
@@ -36,9 +38,19 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000).unref();
 
-function rateLimit(prefix: string, max: number, windowMs: number, keyByUser = false): express.RequestHandler {
+function rateLimit(
+  prefix: string,
+  max: number,
+  windowMs: number,
+  keyFnOrUser: boolean | ((req: AuthRequest) => string) = false,
+): express.RequestHandler {
   return (req: AuthRequest, res, next) => {
-    const id = keyByUser && req.user ? `u:${req.user.id}` : `ip:${req.ip || 'unknown'}`;
+    const id =
+      typeof keyFnOrUser === 'function'
+        ? keyFnOrUser(req)
+        : keyFnOrUser && req.user
+          ? `u:${req.user.id}`
+          : `ip:${req.ip || 'unknown'}`;
     const key = `${prefix}:${id}`;
     const now = Date.now();
     const cur = rateBuckets.get(key);
@@ -86,8 +98,14 @@ async function pruneTtsCache() {
   }
 }
 
+const wibDateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' });
+
+function formatWibDate(d: Date): string {
+  return wibDateFormatter.format(d);
+}
+
 function todayWib(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
+  return formatWibDate(new Date());
 }
 
 const app = express();
@@ -116,21 +134,27 @@ function summarizeProgress(data: ProgressPayload) {
   for (const [ch, st] of kanaEntries) {
     const ok = (st?.s ?? 0) >= 5;
     if (!ok) continue;
-    const code = ch.codePointAt(0) ?? 0;
-    if (code >= 0x3040 && code <= 0x309f) hiraganaMastered++;
-    else if (code >= 0x30a0 && code <= 0x30ff) katakanaMastered++;
+    const known = KANA_MAP[ch];
+    if (known) {
+      if (known.script === 'hiragana') hiraganaMastered++;
+      else katakanaMastered++;
+    } else {
+      const code = ch.codePointAt(0) ?? 0;
+      if (code >= 0x3040 && code <= 0x309f) hiraganaMastered++;
+      else if (code >= 0x30a0 && code <= 0x30ff) katakanaMastered++;
+    }
   }
   const days = Array.isArray(data.days) ? [...new Set(data.days)].sort() : [];
   let streak = 0;
   if (days.length > 0) {
     const set = new Set(days);
-    const cur = new Date();
-    const fmt = (d: Date) =>
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    if (!set.has(fmt(cur))) cur.setDate(cur.getDate() - 1);
-    while (set.has(fmt(cur))) {
+    const [y, m, d] = todayWib().split('-').map(Number);
+    let cursorMs = Date.UTC(y, m - 1, d);
+    const isoDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+    if (!set.has(isoDay(cursorMs))) cursorMs -= 86_400_000;
+    while (set.has(isoDay(cursorMs))) {
       streak++;
-      cur.setDate(cur.getDate() - 1);
+      cursorMs -= 86_400_000;
     }
   }
   return { xp, hiraganaMastered, katakanaMastered, vocabMastered, streak };
@@ -179,9 +203,16 @@ app.get('/api/auth/me', (req, res) => {
   res.json({ user: toPublicUser(user), progress });
 });
 
-const authRateLimit = rateLimit('auth', 15, 15 * 60 * 1000);
+const registerRateLimit = rateLimit('register', 5, 60 * 60 * 1000);
+const loginIpEmailLimit = rateLimit(
+  'login-ie',
+  10,
+  15 * 60 * 1000,
+  (req) => `${req.ip || 'unknown'}:${String(req.body?.email ?? '').trim().toLowerCase() || '-'}`,
+);
+const loginIpLimit = rateLimit('login-ip', 100, 15 * 60 * 1000);
 
-app.post('/api/auth/register', authRateLimit, async (req, res) => {
+app.post('/api/auth/register', registerRateLimit, async (req, res) => {
   const body = req.body ?? {};
   const email = String(body.email ?? '').trim().toLowerCase();
   const password = String(body.password ?? '');
@@ -232,7 +263,7 @@ app.post('/api/auth/register', authRateLimit, async (req, res) => {
   res.status(201).json({ user: toPublicUser(user), progress });
 });
 
-app.post('/api/auth/login', authRateLimit, async (req, res) => {
+app.post('/api/auth/login', loginIpLimit, loginIpEmailLimit, async (req, res) => {
   const body = req.body ?? {};
   const email = String(body.email ?? '').trim().toLowerCase();
   const password = String(body.password ?? '');
@@ -382,6 +413,8 @@ app.get('/api/auth/google/callback', async (req, res) => {
       user = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(info.lastInsertRowid)) as UserRow;
       getOrCreateProgress(user.id);
     } else {
+      // Auto-role hanya menaikkan (promote). Pencabutan role dilakukan manual oleh owner lewat halaman Rekap —
+      // tidak ada penurunan otomatis, supaya perubahan daftar email yang tidak sengaja tidak langsung mencabut akses guru.
       const autoRole = getOwnerEmails().has(email)
         ? 'owner'
         : getTeacherEmails().has(email) && user.role !== 'owner'
@@ -465,6 +498,93 @@ function saveProgressRow(userId: number, data: ProgressPayload) {
   return sum;
 }
 
+function isValidIsoDate(s: unknown): s is string {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const [y, m, d] = s.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+function validateRestoreSnapshot(raw: unknown): { ok: true; data: ProgressPayload } | { ok: false; error: string } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ok: false, error: 'Format cadangan progres tidak valid.' };
+  }
+  const obj = raw as Record<string, unknown>;
+  if (!obj.kana || typeof obj.kana !== 'object' || Array.isArray(obj.kana)) {
+    return { ok: false, error: 'Data huruf kana tidak valid.' };
+  }
+  const cleanKana: Record<string, { c: number; w: number; s: number; t: number }> = {};
+  for (const [ch, val] of Object.entries(obj.kana as Record<string, unknown>)) {
+    if (!(ch in KANA_MAP)) {
+      return { ok: false, error: `Huruf kana tidak dikenal: ${ch}` };
+    }
+    if (!val || typeof val !== 'object' || Array.isArray(val)) {
+      return { ok: false, error: `Statistik huruf ${ch} tidak valid.` };
+    }
+    const st = val as Record<string, unknown>;
+    const c = Number(st.c ?? 0);
+    const w = Number(st.w ?? 0);
+    const s = Number(st.s ?? 0);
+    const t = Number(st.t ?? 0);
+    if (
+      !Number.isInteger(c) || c < 0 || c > 100000 ||
+      !Number.isInteger(w) || w < 0 || w > 100000 ||
+      !Number.isInteger(s) || s < 0 || s > 100000 ||
+      !Number.isFinite(t) || t < 0
+    ) {
+      return { ok: false, error: `Angka statistik huruf ${ch} tidak wajar.` };
+    }
+    cleanKana[ch] = { c, w, s, t };
+  }
+
+  const cleanVocab: Record<string, boolean> = {};
+  if (obj.vocab !== undefined) {
+    if (!obj.vocab || typeof obj.vocab !== 'object' || Array.isArray(obj.vocab)) {
+      return { ok: false, error: 'Data kosakata tidak valid.' };
+    }
+    for (const [id, val] of Object.entries(obj.vocab as Record<string, unknown>)) {
+      if (!VOCAB_IDS.has(id)) {
+        return { ok: false, error: `ID kosakata tidak dikenal: ${id}` };
+      }
+      if (typeof val !== 'boolean') {
+        return { ok: false, error: `Status kosakata ${id} tidak valid.` };
+      }
+      cleanVocab[id] = val;
+    }
+  }
+
+  const xp = obj.xp === undefined ? 0 : Number(obj.xp);
+  if (!Number.isInteger(xp) || xp < 0 || xp > 100000) {
+    return { ok: false, error: 'Nilai XP harus bilangan bulat antara 0 sampai 100000.' };
+  }
+
+  const quizzes = obj.quizzes === undefined ? 0 : Number(obj.quizzes);
+  if (!Number.isInteger(quizzes) || quizzes < 0 || quizzes > 100000) {
+    return { ok: false, error: 'Jumlah kuis harus bilangan bulat 0–100000.' };
+  }
+
+  let cleanDays: string[] = [];
+  if (obj.days !== undefined) {
+    if (!Array.isArray(obj.days) || obj.days.length > 365 || !obj.days.every(isValidIsoDate)) {
+      return { ok: false, error: 'Daftar tanggal belajar harus format YYYY-MM-DD (maksimal 365 hari).' };
+    }
+    cleanDays = [...new Set(obj.days)].sort();
+  }
+
+  const name = typeof obj.name === 'string' ? obj.name.trim().slice(0, 32) : undefined;
+  return {
+    ok: true,
+    data: {
+      kana: cleanKana,
+      vocab: cleanVocab,
+      xp,
+      days: cleanDays,
+      quizzes,
+      ...(name ? { name } : {}),
+    },
+  };
+}
+
 app.put('/api/progress', requireAuth, (req: AuthRequest, res) => {
   const payload = req.body as ProgressPayload | undefined;
   if (!payload || typeof payload !== 'object' || typeof payload.kana !== 'object') {
@@ -485,6 +605,30 @@ app.put('/api/progress', requireAuth, (req: AuthRequest, res) => {
 
   const sum = saveProgressRow(req.user!.id, clean);
   res.json({ ok: true, progress: clean, summary: sum });
+});
+
+app.delete('/api/progress', requireAuth, (req: AuthRequest, res) => {
+  const current = getOrCreateProgress(req.user!.id);
+  const reset: ProgressPayload = {
+    kana: {},
+    vocab: {},
+    xp: 0,
+    days: [],
+    quizzes: 0,
+    ...(current.name ? { name: current.name } : {}),
+  };
+  const sum = saveProgressRow(req.user!.id, reset);
+  res.json({ ok: true, progress: reset, summary: sum });
+});
+
+app.post('/api/progress/restore', requireAuth, (req: AuthRequest, res) => {
+  const checked = validateRestoreSnapshot(req.body);
+  if (!checked.ok) {
+    res.status(400).json({ error: checked.error });
+    return;
+  }
+  const sum = saveProgressRow(req.user!.id, checked.data);
+  res.json({ ok: true, progress: checked.data, summary: sum });
 });
 
 const practiceRateLimit = rateLimit('practice', 120, 60 * 1000, true);
@@ -510,11 +654,12 @@ app.post('/api/practice/record', requireAuth, practiceRateLimit, (req: AuthReque
 
   if (type === 'kana_answer') {
     const ch = String(body.char ?? '').trim();
-    if (!ch || ch.length > 4) {
-      res.status(400).json({ error: 'Karakter kana tidak valid.' });
+    if (!(ch in KANA_MAP)) {
+      res.status(400).json({ error: 'Karakter kana tidak dikenali.' });
       return;
     }
-    const correct = Boolean(body.correct);
+    // Abaikan flag correct dari browser; verifikasi penuh di server terhadap peta kana.
+    const correct = isKanaAnswerCorrect(ch, body.given, body.mode);
     const prev = next.kana![ch] ?? { c: 0, w: 0, s: 0, t: 0 };
     next.kana![ch] = correct
       ? { c: (prev.c ?? 0) + 1, w: prev.w ?? 0, s: (prev.s ?? 0) + 1, t: Date.now() }
@@ -522,20 +667,42 @@ app.post('/api/practice/record', requireAuth, practiceRateLimit, (req: AuthReque
     next.xp = (next.xp ?? 0) + (correct ? 10 : 1);
     ensureToday();
   } else if (type === 'quiz_finish') {
-    const totalCount = Math.floor(Number(body.totalCount ?? 0));
-    const correctCount = Math.floor(Number(body.correctCount ?? 0));
-    if (!Number.isFinite(totalCount) || totalCount < 1 || totalCount > 50 || correctCount < 0 || correctCount > totalCount) {
-      res.status(400).json({ error: 'Skor kuis tidak valid.' });
+    const answersRaw = body.answers;
+    if (!Array.isArray(answersRaw) || answersRaw.length < 1 || answersRaw.length > 50) {
+      res.status(400).json({ error: 'Daftar jawaban kuis harus berisi 1–50 soal.' });
       return;
     }
-    const bonusXp = correctCount === totalCount ? 50 : 10;
+    const quizType = body.quizType === 'vocab' ? 'vocab' : 'kana';
+    let correctCount = 0;
+    if (quizType === 'vocab') {
+      for (const item of answersRaw) {
+        const id = String((item as Record<string, unknown>)?.id ?? '').trim();
+        const givenId = String((item as Record<string, unknown>)?.givenId ?? '').trim();
+        if (!VOCAB_IDS.has(id) || (givenId && !VOCAB_IDS.has(givenId))) {
+          res.status(400).json({ error: 'Jawaban kuis kosakata mengandung ID tidak valid.' });
+          return;
+        }
+        if (id === givenId) correctCount++;
+      }
+    } else {
+      for (const item of answersRaw) {
+        const rec = (item ?? {}) as Record<string, unknown>;
+        const ch = String(rec.char ?? '').trim();
+        if (!(ch in KANA_MAP)) {
+          res.status(400).json({ error: 'Jawaban kuis mengandung karakter kana tidak valid.' });
+          return;
+        }
+        if (isKanaAnswerCorrect(ch, rec.given, rec.mode)) correctCount++;
+      }
+    }
+    const bonusXp = correctCount === answersRaw.length ? 50 : 10;
     next.quizzes = (next.quizzes ?? 0) + 1;
     next.xp = (next.xp ?? 0) + bonusXp;
     ensureToday();
   } else if (type === 'vocab_toggle' || type === 'vocab_mark') {
     const id = String(body.id ?? '').trim();
-    if (!id || id.length > 64) {
-      res.status(400).json({ error: 'ID kosakata tidak valid.' });
+    if (!VOCAB_IDS.has(id)) {
+      res.status(400).json({ error: 'ID kosakata tidak dikenal.' });
       return;
     }
     const hadKey = id in next.vocab!;
@@ -700,7 +867,7 @@ app.get('/api/leaderboard', (_req, res) => {
               COALESCE(p.vocab_mastered, 0) AS vocab_mastered
        FROM users u
        LEFT JOIN user_progress p ON p.user_id = u.id
-       WHERE u.profile_completed = 1 AND u.show_on_leaderboard = 1
+       WHERE u.profile_completed = 1 AND u.show_on_leaderboard = 1 AND u.role = 'student'
        ORDER BY xp DESC, streak DESC, hiragana_mastered DESC, u.id ASC
        LIMIT 100`
     )
@@ -827,6 +994,8 @@ app.patch('/api/teacher/students/:id/role', requireAuth, requireTeacher, (req: A
   res.json({ ok: true, id, role });
 });
 
+// Auto-role hanya menaikkan (promote). Pencabutan role dilakukan manual oleh owner lewat halaman Rekap —
+// tidak ada penurunan otomatis, supaya perubahan daftar email yang tidak sengaja tidak langsung mencabut akses guru.
 const ownerEmails = getOwnerEmails();
 for (const email of getTeacherEmails()) {
   if (!ownerEmails.has(email)) {

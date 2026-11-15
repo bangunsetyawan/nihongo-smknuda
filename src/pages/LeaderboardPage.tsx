@@ -85,6 +85,7 @@ export default function LeaderboardPage() {
                   <div className="row gap-s wrap">
                     <strong>{e.nickname}</strong>
                     {e.japaneseName && <span className="jp muted small">{e.japaneseName}</span>}
+                    {e.role === 'owner' && <span className="pill">Owner</span>}
                     {e.role === 'teacher' && <span className="pill">Pembina</span>}
                     {isMe && <span className="pill" style={{ background: 'var(--ok-soft)', color: 'var(--ok)' }}>Kamu</span>}
                   </div>

@@ -5,9 +5,10 @@ services:
     container_name: nihongo-api
     restart: unless-stopped
     environment:
+      TZ: "Asia/Jakarta"
       PORT: "3000"
       DB_PATH: "/data/nihongo.db"
-      JWT_SECRET: "${JWT_SECRET:-nihongo-smknuda-secret-ubah-di-env}"
+      JWT_SECRET: "${JWT_SECRET}"
       APP_URL: "${APP_URL:-https://japan.smknuda.qzz.io}"
       GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-}"
       GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:-}"

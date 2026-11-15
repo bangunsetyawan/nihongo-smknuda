@@ -17,9 +17,9 @@ const MODES: { id: Mode; label: string; desc: string }[] = [
 ];
 
 interface Question { kana: Kana; options: Kana[] }
-interface Answer { kana: Kana; correct: boolean; given: string }
+interface Answer { kana: Kana; correct: boolean; given: string; mode: Mode }
 
-const ALT: Record<string, string[]> = { を: ['o'], ヲ: ['o'], ぢ: ['di', 'dji'], ヂ: ['di'], づ: ['du', 'dzu'], ヅ: ['du'] };
+const ALT: Record<string, string[]> = { を: ['o'], ヲ: ['o'], ぢ: ['di', 'dji'], ヂ: ['di', 'dji'], づ: ['du', 'dzu'], ヅ: ['du', 'dzu'] };
 
 function shuffle<T>(a: T[]): T[] {
   const r = [...a];
@@ -96,12 +96,12 @@ export default function Quiz() {
     if (mode === 'ketik') setTimeout(() => inputRef.current?.focus(), 50);
   }, [q, mode]);
 
-  const answer = (given: string, correct: boolean) => {
+  const answer = (pickedVal: string, givenRomaji: string, correct: boolean) => {
     if (!q || picked !== null) return;
-    setPicked(given);
-    pickedRef.current = given;
-    recordAnswer(q.kana.char, correct);
-    setAnswers((a) => [...a, { kana: q.kana, correct, given }]);
+    setPicked(pickedVal);
+    pickedRef.current = pickedVal;
+    recordAnswer(q.kana.char, givenRomaji, mode, correct);
+    setAnswers((a) => [...a, { kana: q.kana, correct, given: givenRomaji, mode }]);
     if (sound && mode !== 'dengar') speak(q.kana.char);
     if (correct) setTimeout(() => { if (pickedRef.current !== null) next(); }, 850);
   };
@@ -118,7 +118,13 @@ export default function Quiz() {
   useEffect(() => {
     if (done && answers.length) {
       const right = answers.filter((a) => a.correct).length;
-      finishQuiz(right === answers.length ? 50 : 10, right, answers.length);
+      finishQuiz(
+        right === answers.length ? 50 : 10,
+        {
+          quizType: 'kana',
+          answers: answers.map((a) => ({ char: a.kana.char, given: a.given, mode: a.mode })),
+        },
+      );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [done]);
@@ -130,7 +136,7 @@ export default function Quiz() {
       if (picked !== null && e.key === 'Enter') { e.preventDefault(); next(); return; }
       if (mode !== 'ketik' && picked === null && ['1', '2', '3', '4'].includes(e.key)) {
         const o = q.options[+e.key - 1];
-        if (o) answer(o.char, o.char === q.kana.char);
+        if (o) answer(o.char, o.romaji, o.char === q.kana.char);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -274,7 +280,7 @@ export default function Quiz() {
         </div>
 
         {mode === 'ketik' ? (
-          <form className="type-form" onSubmit={(e) => { e.preventDefault(); if (picked === null) answer(typed, checkTyped(typed, k)); else next(); }}>
+          <form className="type-form" onSubmit={(e) => { e.preventDefault(); if (picked === null) answer(typed, typed, checkTyped(typed, k)); else next(); }}>
             <input
               ref={inputRef}
               value={typed}
@@ -292,7 +298,7 @@ export default function Quiz() {
               const state = picked === null ? '' : o.char === k.char ? 'right' : o.char === picked ? 'wrong' : 'dim';
               return (
                 <button key={o.char} className={`option ${state}`} disabled={picked !== null}
-                  onClick={() => answer(o.char, o.char === k.char)}>
+                  onClick={() => answer(o.char, o.romaji, o.char === k.char)}>
                   <span className="opt-num">{i + 1}</span>
                   <span className={showKanaAsOption ? 'jp-hand opt-kana' : 'opt-romaji'}>{showKanaAsOption ? o.char : o.romaji}</span>
                 </button>

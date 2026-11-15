@@ -74,6 +74,14 @@ export default function TeacherPage() {
 
   const pct = (n: number, total: number) => Math.min(100, Math.round((n / total) * 100));
 
+  function formatLastLoginWib(raw: string): string {
+    if (!raw) return '-';
+    const iso = raw.includes('T') ? raw : `${raw.replace(' ', 'T')}Z`;
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return raw;
+    return `${d.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`;
+  }
+
   function downloadExcelCsv() {
     const headers = [
       'No',
@@ -93,7 +101,7 @@ export default function TeacherPage() {
       'Katakana (%)',
       `Kosakata (${vocabTotal})`,
       'Kosakata (%)',
-      'Terakhir Login',
+      'Terakhir Login (WIB)',
     ];
     const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const rows = filtered.map((s, idx) => [
@@ -114,7 +122,7 @@ export default function TeacherPage() {
       `${pct(s.katakanaMastered, kataTotal)}%`,
       s.vocabMastered,
       `${pct(s.vocabMastered, vocabTotal)}%`,
-      s.lastLoginAt,
+      formatLastLoginWib(s.lastLoginAt),
     ]);
     const csv = '\uFEFF' + [headers, ...rows].map((r) => r.map(esc).join(',')).join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -129,14 +137,22 @@ export default function TeacherPage() {
     if (!confirm(`Ubah role ${s.fullName || s.email} menjadi ${nextRole === 'teacher' ? 'Pembina/Guru' : 'Siswa'}?`)) {
       return;
     }
-    const res = await fetch(`/api/teacher/students/${s.id}/role`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ role: nextRole }),
-    });
-    if (res.ok) {
+    setErr('');
+    try {
+      const res = await fetch(`/api/teacher/students/${s.id}/role`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ role: nextRole }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setErr(data.error || 'Gagal mengubah role pengguna.');
+        return;
+      }
       setStudents((prev) => prev.map((item) => (item.id === s.id ? { ...item, role: nextRole } : item)));
+    } catch {
+      setErr('Tidak dapat terhubung ke server saat mengubah role.');
     }
   }
 

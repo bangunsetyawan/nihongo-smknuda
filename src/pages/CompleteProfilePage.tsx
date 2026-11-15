@@ -192,14 +192,6 @@ export default function CompleteProfilePage() {
                 onChange={(e) => setNewPassword(e.target.value)}
               />
             </label>
-            <label className="row gap-s" style={{ alignItems: 'center', cursor: 'pointer', fontSize: '.92rem' }}>
-            <input
-              type="checkbox"
-              checked={showOnLeaderboard}
-              onChange={(e) => setShowOnLeaderboard(e.target.checked)}
-            />
-            <span>Tampilkan nama panggilan &amp; progres saya di Papan Peringkat</span>
-          </label>
 
           <div className="row gap-s wrap">
               <button className="btn small" type="submit" disabled={pwBusy}>

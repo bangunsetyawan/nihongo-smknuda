@@ -4,10 +4,11 @@ import { allKana } from '../data/kana';
 import { VOCAB } from '../data/vocab';
 import { useAuth } from '../lib/auth';
 import { convertToJapaneseName } from '../lib/japaneseName';
-import { exportProgress, importProgress, level, mastery, resetProgress, setName, streak, useProgress } from '../lib/progress';
+import { exportProgress, importProgress, level, mastery, resetProgress, setName, streak, useProgress, useSyncStatus } from '../lib/progress';
 
 export default function Home() {
   const prog = useProgress();
+  const syncStatus = useSyncStatus();
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const hira = allKana('hiragana');
@@ -41,7 +42,13 @@ export default function Home() {
           <div className="hero-text">
             <div className="dash-user-meta">
               <span className="dash-badge">{user.kelas} {user.jurusan}</span>
-              <span className="sync-note ok">✓ Progres tersinkron</span>
+              {syncStatus === 'syncing' ? (
+                <span className="sync-note">Menyinkronkan…</span>
+              ) : syncStatus === 'synced' ? (
+                <span className="sync-note ok">✓ Progres tersinkron</span>
+              ) : (
+                <span className="sync-note warn">⚠ Belum tersinkron — periksa koneksi</span>
+              )}
               <Link to="/lengkapi-profil" className="dash-edit-link">Edit profil</Link>
             </div>
             <h1>Halo, {user.nickname}! 👋</h1>
@@ -188,7 +195,7 @@ export default function Home() {
             <p className="muted">Lihat peringkat XP, streak, dan progres teman-teman.</p>
           </div>
         </Link>
-        {user?.role === 'teacher' && (
+        {(user?.role === 'teacher' || user?.role === 'owner') && (
           <Link to="/rekap" className="card step">
             <div className="step-n">📊</div>
             <div>
@@ -258,11 +265,25 @@ function BackupCard({ onEditName }: { onEditName: () => void }) {
         <button className="btn small" onClick={onEditName}>✏️ Ganti nama</button>
         <button className="btn small" onClick={download}>⬇️ Unduh cadangan</button>
         <button className="btn small" onClick={() => fileRef.current?.click()}>⬆️ Pulihkan cadangan</button>
-        <button className="btn small danger" onClick={() => { if (confirm('Hapus semua progres di perangkat ini?')) resetProgress(); }}>🗑 Reset progres</button>
+        <button className="btn small danger" onClick={async () => {
+          if (!confirm('Hapus semua progres belajar? Tindakan ini tidak bisa dibatalkan.')) return;
+          try {
+            await resetProgress();
+            setMsg('✔ Progres berhasil direset.');
+          } catch (err) {
+            setMsg(`✘ ${err instanceof Error ? err.message : 'Gagal mereset progres.'}`);
+          }
+        }}>🗑 Reset progres</button>
         <input ref={fileRef} type="file" accept="application/json" hidden onChange={async (e) => {
           const f = e.target.files?.[0];
+          e.target.value = '';
           if (!f) return;
-          try { importProgress(await f.text()); setMsg('✔ Progres berhasil dipulihkan.'); } catch { setMsg('✘ File tidak valid.'); }
+          try {
+            await importProgress(await f.text());
+            setMsg('✔ Progres berhasil dipulihkan.');
+          } catch (err) {
+            setMsg(`✘ ${err instanceof Error ? err.message : 'File tidak valid.'}`);
+          }
         }} />
       </div>
       {msg && <p className="small">{msg}</p>}

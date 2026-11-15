@@ -3,7 +3,15 @@ import jwt from 'jsonwebtoken';
 import { db, type UserRow } from './db.js';
 
 export const COOKIE_NAME = 'nihongo_session';
-const JWT_SECRET = process.env.JWT_SECRET || 'nihongo-smknuda-dev-secret-change-me';
+const FORBIDDEN_DEFAULT_SECRETS = new Set([
+  'nihongo-smknuda-dev-secret-change-me',
+  'nihongo-smknuda-secret-ubah-di-env',
+]);
+const rawJwtSecret = process.env.JWT_SECRET?.trim() ?? '';
+if (!rawJwtSecret || FORBIDDEN_DEFAULT_SECRETS.has(rawJwtSecret)) {
+  throw new Error('JWT_SECRET belum diset di .env (atau masih memakai nilai default lama).');
+}
+const JWT_SECRET = rawJwtSecret;
 
 export interface AuthRequest extends Request {
   user?: UserRow;
