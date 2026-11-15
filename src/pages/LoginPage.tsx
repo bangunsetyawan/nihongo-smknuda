@@ -17,7 +17,9 @@ export default function LoginPage() {
   const { user, googleEnabled } = useAuth();
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [mode, setMode] = useState<'login' | 'register'>(() =>
+    params.get('tab') === 'register' ? 'register' : 'login'
+  );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(() => {
     const code = params.get('error');
@@ -79,9 +81,9 @@ export default function LoginPage() {
       <div className="card auth-card">
         <div className="auth-head">
           <span className="hero-kicker jp">アカウント</span>
-          <h1>{mode === 'login' ? 'Masuk ke Japan Club' : 'Daftar Akun Siswa'}</h1>
+          <h1>{mode === 'login' ? 'Masuk ke Nihongo' : 'Daftar Akun Siswa'}</h1>
           <p className="muted">
-            Simpan progres hafalan Hiragana, Katakana, dan Kosakata kamu secara permanen di server sekolah.
+            Simpan progres hafalan Hiragana, Katakana, dan Kosakata kamu secara permanen di server SMKN NU Darussalam.
           </p>
         </div>
 

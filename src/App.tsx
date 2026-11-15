@@ -36,12 +36,12 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <Link to="/" className="brand">
-          <img src="/logo-smk.png" alt="Logo SMK NU Darussalam" className="brand-img" />
+          <img src="/logo-smk.png" alt="Logo SMKN NU Darussalam" className="brand-img" />
           <span className="brand-text">
             <span>
-              <strong>Japan Club</strong> <span className="brand-jp jp">日本語クラブ</span>
+              <strong>Nihongo</strong> <span className="brand-jp jp">日本語</span>
             </span>
-            <span className="brand-sub">SMK NU Darussalam</span>
+            <span className="brand-sub">SMKN NU Darussalam</span>
           </span>
         </Link>
         <div className="topbar-right">
@@ -93,8 +93,8 @@ export default function App() {
 
       <footer className="footer">
         <div className="footer-brand">
-          <img src="/logo-smk.png" alt="Logo SMK NU Darussalam" />
-          <strong>Japan Club SMK NU Darussalam</strong>
+          <img src="/logo-smk.png" alt="Logo SMKN NU Darussalam" />
+          <strong>Nihongo SMKN NU Darussalam</strong>
           <span className="muted">· Srono, Banyuwangi</span>
         </div>
         <div>Ekstrakurikuler Bahasa Jepang · <Link to="/panduan">Panduan</Link> · <Link to="/jalur">Jalur N4</Link> · <Link to="/sumber">Sumber belajar</Link> · <Link to="/sumber#kredit">Kredit</Link></div>

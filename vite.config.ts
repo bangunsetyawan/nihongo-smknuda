@@ -9,9 +9,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'logo-smk.png'],
       manifest: {
-        name: 'Japan Club SMK NU Darussalam — Belajar Bahasa Jepang',
-        short_name: 'Japan Club SMKNUDA',
-        description: 'Belajar bahasa Jepang dari nol untuk ekstrakurikuler Japan Club SMK NU Darussalam menuju JLPT/SSW N4.',
+        name: 'Nihongo SMKN NU Darussalam — Belajar Bahasa Jepang',
+        short_name: 'Nihongo SMKNUDA',
+        description: 'Belajar bahasa Jepang dari nol untuk Nihongo SMKN NU Darussalam menuju JLPT/SSW N4.',
         lang: 'id',
         theme_color: '#1e2a5a',
         background_color: '#fbf7f2',

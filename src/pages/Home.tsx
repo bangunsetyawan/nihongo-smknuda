@@ -32,49 +32,53 @@ export default function Home() {
       <section className="hero">
         <div className="hero-text">
           <div className="hero-club-badge">
-            <img src="/logo-smk.png" alt="SMK NU Darussalam" />
-            <span>JAPAN CLUB · SMK NU DARUSSALAM <b className="jp">日本語クラブ</b></span>
+            <img src="/logo-smk.png" alt="SMKN NU Darussalam" />
+            <span>NIHONGO · SMKN NU DARUSSALAM <b className="jp">日本語</b></span>
           </div>
           <div className="hero-kicker jp">ようこそ！</div>
           <h1>
-            {displayName && !editName ? <>Halo, {displayName}! 👋</> : <>Belajar Bahasa Jepang dari Nol</>}
+            {displayName && !editName
+              ? <>Halo, {displayName}! 👋</>
+              : <>Nihongo SMKN NU Darussalam</>}
           </h1>
           <p className="lead">
-            Portal belajar resmi Ekstrakurikuler Bahasa Jepang (Japan Club) SMK NU Darussalam. Mulai dari huruf
-            Hiragana &amp; Katakana, kosakata IRODORI, hingga persiapan ujian <strong>JLPT N4 / SSW</strong> untuk
-            seluruh jurusan (TJKT, AKL, TKRO).
+            Portal belajar Bahasa Jepang dari nol — mulai dari Hiragana &amp; Katakana, kosakata IRODORI, hingga persiapan <strong>JLPT N4 / SSW</strong> untuk semua jurusan (TJKT, AKL, TKRO).
           </p>
+
           {editName && !user ? (
             <form className="row gap-s wrap" onSubmit={(e) => { e.preventDefault(); if (nameInput.trim()) { setName(nameInput.trim()); setEditName(false); } }}>
               <input className="input" placeholder="Nama panggilanmu…" value={nameInput} onChange={(e) => setNameInput(e.target.value)} maxLength={24} />
               <button className="btn primary" type="submit">Simpan</button>
             </form>
+          ) : !authLoading && !user ? (
+            <div className="hero-actions">
+              <div className="hero-btn-row">
+                <Link className="btn primary big" to="/masuk">Masuk</Link>
+                <Link className="btn big" to="/masuk?tab=register">Daftar Akun</Link>
+              </div>
+              <Link className="hero-guest-link" to={nextStep.to}>
+                atau lanjut belajar sebagai tamu ({nextStep.label}) →
+              </Link>
+            </div>
           ) : (
-            <div className="row gap-s wrap">
-              <Link className="btn primary big" to={nextStep.to}><span className="jp">{nextStep.jp}</span> {nextStep.label} →</Link>
-              <Link className="btn big" to="/kuis">🎯 Kuis cepat</Link>
-              {!authLoading && !user && (
-                <Link className="btn big" to="/masuk">🔐 Masuk / Daftar</Link>
+            <div className="hero-actions">
+              <div className="hero-btn-row">
+                <Link className="btn primary big" to={nextStep.to}><span className="jp">{nextStep.jp}</span> {nextStep.label} →</Link>
+                <Link className="btn big" to="/kuis">🎯 Kuis cepat</Link>
+              </div>
+              {user && (
+                <p className="sync-note ok">
+                  ✓ Progres tersinkron · {user.kelas} {user.jurusan}
+                  {user.japaneseName ? <> · <span className="jp">{user.japaneseName}</span></> : null}
+                  {' · '}
+                  <Link to="/lengkapi-profil">Edit profil</Link>
+                </p>
               )}
             </div>
           )}
-          {!authLoading && (
-            user ? (
-              <p className="sync-note ok">
-                ✓ Progres tersinkron ke server · {user.kelas} {user.jurusan}
-                {user.japaneseName ? <> · <span className="jp">{user.japaneseName}</span></> : null}
-                {' · '}
-                <Link to="/lengkapi-profil">Edit profil</Link>
-              </p>
-            ) : (
-              <p className="sync-note muted">
-                Mode tamu: materi bebas diakses, namun <Link to="/masuk">masuk / daftar</Link> agar progres belajarmu tersimpan di server sekolah.
-              </p>
-            )
-          )}
         </div>
         <div className="hero-art">
-          <img src="/logo-smk.png" alt="Logo SMK NU Darussalam" className="hero-logo-big" />
+          <img src="/logo-smk.png" alt="Logo SMKN NU Darussalam" className="hero-logo-big" />
           <div className="hero-kana jp-hand" aria-hidden="true">
             <span>あ</span><span>い</span><span>う</span>
           </div>
