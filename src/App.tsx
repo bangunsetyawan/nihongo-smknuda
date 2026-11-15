@@ -69,7 +69,7 @@ export default function App() {
                 </button>
               </div>
             ) : (
-              <Link to="/masuk" className="btn small primary">Masuk</Link>
+              <Link to="/masuk" className="btn small primary">Login</Link>
             )
           )}
         </div>

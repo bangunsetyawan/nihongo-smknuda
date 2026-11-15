@@ -452,30 +452,21 @@ main { flex: 1; }
 }
 
 /* ---------- Quick Name & Dashboard Hero ---------- */
-.quick-name-box {
-  margin-top: 1.35rem;
-  padding: 1rem 1.1rem;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, .1);
-  border: 1px solid rgba(255, 255, 255, .2);
-  display: flex; flex-direction: column; gap: .6rem;
+.quick-guest-card {
+  margin-top: 1.1rem;
+  display: flex; flex-direction: column; gap: .65rem;
 }
-.quick-name-label { font-size: .86rem; font-weight: 600; color: #e6ebff; }
+.quick-guest-head {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem;
+}
+.jp-preview-badge {
+  display: inline-flex; align-items: center; gap: .35rem;
+  background: var(--sakura-soft); color: var(--ink);
+  padding: .2rem .65rem; border-radius: 999px; font-weight: 700; font-size: .9rem;
+}
 .quick-name-row { display: flex; gap: .6rem; flex-wrap: wrap; }
-.quick-name-row .input { flex: 1; min-width: 180px; border-color: transparent; }
-.jp-preview-row {
-  display: flex; align-items: center; flex-wrap: wrap; gap: .4rem;
-  font-size: .9rem; color: #ffe2e8;
-}
-.jp-preview-row strong { font-size: 1.15rem; color: #fff; }
+.quick-name-row .input { flex: 1; min-width: 180px; }
 .jp-name-latin { font-size: .82rem; opacity: .85; }
-
-.hero-auth-bar {
-  margin-top: 1.1rem; padding-top: .9rem;
-  border-top: 1px solid rgba(255, 255, 255, .14);
-  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .65rem;
-}
-.hero-auth-hint { font-size: .84rem; color: #cfd6f4; }
 
 .dash-user-meta { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .75rem; margin-bottom: .5rem; }
 .dash-badge {

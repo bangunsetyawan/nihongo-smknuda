@@ -78,78 +78,78 @@ export default function Home() {
           </div>
         </section>
       ) : (
-        <section className="hero">
-          <div className="hero-text">
-            <div className="hero-top-row">
-              <span className="hero-kicker jp">ようこそ！</span>
-              <div className="hero-kana-inline jp-hand" aria-hidden="true">
-                <span>あ</span><span>い</span><span>う</span>
+        <>
+          <section className="hero">
+            <div className="hero-text">
+              <div className="hero-top-row">
+                <span className="hero-kicker jp">ようこそ！</span>
+                <div className="hero-kana-inline jp-hand" aria-hidden="true">
+                  <span>あ</span><span>い</span><span>う</span>
+                </div>
               </div>
-            </div>
-            <h1>
-              {prog.name && !editingGuestName
-                ? <>Halo, {prog.name}! 👋</>
-                : <>Belajar Bahasa Jepang dengan Cepat</>}
-            </h1>
-            <p className="lead">
-              Dari <strong>SMKN NU Darussalam</strong> untuk belajar Hiragana, Katakana, dan kosakata IRODORI menuju <strong>JLPT N4 / SSW</strong>.
-            </p>
+              <h1>
+                {prog.name && !editingGuestName
+                  ? <>Halo, {prog.name}! 👋</>
+                  : <>Belajar Bahasa Jepang dengan Cepat</>}
+              </h1>
+              <p className="lead">
+                Dari <strong>SMKN NU Darussalam</strong> untuk belajar Hiragana, Katakana, dan kosakata IRODORI menuju <strong>JLPT N4 / SSW</strong>.
+              </p>
 
-            <form
-              className="quick-name-box"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (nameInput.trim()) setName(nameInput.trim());
-                setEditingGuestName(false);
-                navigate(nextStep.to);
-              }}
-            >
-              <label className="quick-name-label" htmlFor="guest-name-input">
-                Akses cepat tanpa login — ketik nama panggilanmu:
-              </label>
-              <div className="quick-name-row">
-                <input
-                  id="guest-name-input"
-                  className="input"
-                  placeholder="Contoh: Bangun / Siti / Fauzi"
-                  maxLength={24}
-                  value={nameInput}
-                  onChange={(e) => {
-                    setNameInput(e.target.value);
-                    setEditingGuestName(true);
-                  }}
-                />
-                <button className="btn primary" type="submit">
-                  Mulai Belajar →
-                </button>
-              </div>
-              {jpPreview.katakana && (
-                <div className="jp-preview-row">
-                  <span>Nama Jepang kamu:</span>
-                  <strong className="jp">{jpPreview.katakana}</strong>
-                  <span className="jp-name-latin">({jpPreview.romaji})</span>
+              {!authLoading && (
+                <div className="hero-actions">
+                  <div className="hero-btn-row">
+                    <Link className="btn primary big" to="/masuk">Login</Link>
+                    <Link className="btn big" to="/masuk?tab=register">Daftar</Link>
+                  </div>
                 </div>
               )}
-            </form>
-
-            {!authLoading && (
-              <div className="hero-auth-bar">
-                <span className="hero-auth-hint">Mau progres tersimpan permanen di server?</span>
-                <div className="hero-btn-row">
-                  <Link className="btn small" to="/masuk">Masuk (Email)</Link>
-                  <Link className="btn small" to="/masuk?tab=register">Daftar Akun</Link>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="hero-art">
-            <div className="hero-kana jp-hand" aria-hidden="true">
-              <span>あ</span><span>い</span><span>う</span>
             </div>
-            <div className="hero-art-sub jp" aria-hidden="true">日本語を楽しく学ぼう</div>
-          </div>
-        </section>
+
+            <div className="hero-art">
+              <div className="hero-kana jp-hand" aria-hidden="true">
+                <span>あ</span><span>い</span><span>う</span>
+              </div>
+              <div className="hero-art-sub jp" aria-hidden="true">日本語を楽しく学ぼう</div>
+            </div>
+          </section>
+
+          <form
+            className="card quick-guest-card"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (nameInput.trim()) setName(nameInput.trim());
+              setEditingGuestName(false);
+              navigate(nextStep.to);
+            }}
+          >
+            <div className="quick-guest-head">
+              <strong>Akses cepat tanpa login</strong>
+              {jpPreview.katakana && (
+                <span className="jp-preview-badge">
+                  <span className="jp">{jpPreview.katakana}</span>
+                  <span className="muted small">({jpPreview.romaji})</span>
+                </span>
+              )}
+            </div>
+            <div className="quick-name-row">
+              <input
+                id="guest-name-input"
+                className="input"
+                placeholder="Ketik nama panggilanmu (mis. Wahyu / Okta)…"
+                maxLength={24}
+                value={nameInput}
+                onChange={(e) => {
+                  setNameInput(e.target.value);
+                  setEditingGuestName(true);
+                }}
+              />
+              <button className="btn primary" type="submit">
+                Mulai Belajar →
+              </button>
+            </div>
+          </form>
+        </>
       )}
 
       <section className="stats stats-5">
